@@ -11,8 +11,8 @@ class EuiccViewController: UIViewController {
     private let downloadProgressView = UIProgressView(progressViewStyle: .bar)
     private let activationCodeTextField = UITextField()
     private let downloadButton = UIButton(type: .system)
-    private let eidLabel = UILabel()
-    
+
+    private let responseTextView = UITextView()
     // MARK: - Properties
     
     private var profiles: [ProfileInfo] = []
@@ -46,10 +46,9 @@ class EuiccViewController: UIViewController {
         )
         
         // Configure EID label
-        eidLabel.font = UIFont.systemFont(ofSize: 12)
-        eidLabel.textColor = .secondaryLabel
-        eidLabel.textAlignment = .center
-        eidLabel.numberOfLines = 0
+        responseTextView.font = UIFont.systemFont(ofSize: 12)
+        responseTextView.textColor = .secondaryLabel
+        responseTextView.textAlignment = .center
         
         // Configure table view
         tableView.register(ProfileCell.self, forCellReuseIdentifier: "ProfileCell")
@@ -77,7 +76,7 @@ class EuiccViewController: UIViewController {
         activityIndicator.hidesWhenStopped = true
         
         // Add subviews
-        view.addSubview(eidLabel)
+        view.addSubview(responseTextView)
         view.addSubview(tableView)
         view.addSubview(activationCodeTextField)
         view.addSubview(downloadButton)
@@ -89,7 +88,7 @@ class EuiccViewController: UIViewController {
     }
     
     private func setupConstraints() {
-        eidLabel.translatesAutoresizingMaskIntoConstraints = false
+        responseTextView.translatesAutoresizingMaskIntoConstraints = false
         tableView.translatesAutoresizingMaskIntoConstraints = false
         activationCodeTextField.translatesAutoresizingMaskIntoConstraints = false
         downloadButton.translatesAutoresizingMaskIntoConstraints = false
@@ -99,12 +98,12 @@ class EuiccViewController: UIViewController {
         
         NSLayoutConstraint.activate([
             // EID label at top
-            eidLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            eidLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            eidLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            responseTextView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            responseTextView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            responseTextView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             
             // Table view below EID label
-            tableView.topAnchor.constraint(equalTo: eidLabel.bottomAnchor, constant: 8),
+            tableView.topAnchor.constraint(equalTo: responseTextView.bottomAnchor, constant: 8),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.5),
@@ -127,7 +126,8 @@ class EuiccViewController: UIViewController {
             downloadProgressView.topAnchor.constraint(equalTo: downloadProgressLabel.bottomAnchor, constant: 8),
             downloadProgressView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             downloadProgressView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            
+            downloadProgressView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
+
             // Activity indicator in center
             activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
@@ -138,22 +138,21 @@ class EuiccViewController: UIViewController {
         // Create APDU Interface for NFC communications
         let apduInterface = SmartCardApduInterface()
         
+        
         // Create HTTP Interface for network communications
         let httpInterface = NetworkHttpInterface()
         
         // Create EUICC Manager with interfaces
-        euiccManager = EuiccManager(apduInterface: apduInterface, httpInterface: httpInterface)
-        
-        // Attempt to get EID
-        if let eid = euiccManager?.getEID() {
-            eidLabel.text = "EID: \(eid)"
-        } else {
-            eidLabel.text = "Could not retrieve EID"
-        }
-        if let eidInfo = euiccManager?.getCardInfo() {
-            print(eidInfo.toJsonString())
-        } else {
-            
+        do {
+            euiccManager = try EuiccManager(apduInterface: apduInterface, httpInterface: httpInterface)
+            // Attempt to get EID
+            let eid = euiccManager?.getEID()
+            responseTextView.text += "EID: \(eid)"
+            if let eidInfo = try? euiccManager?.getCardInfo() {
+                print(eidInfo.toJsonString())
+            }
+        } catch {
+            responseTextView.text += error.localizedDescription
         }
     }
     

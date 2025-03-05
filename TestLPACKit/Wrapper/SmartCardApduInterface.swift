@@ -10,6 +10,7 @@ import CryptoTokenKit
 
 class SmartCardApduInterface: ApduInterface {
 
+
     
     private var card: TKSmartCard?
     private var slotManager: TKSmartCardSlotManager? = TKSmartCardSlotManager.default
@@ -18,17 +19,9 @@ class SmartCardApduInterface: ApduInterface {
     let initalCommand = "80AA00000AA9088100820101830107"
     let channelCommand = "0070000001"
 
-    @objc private func slotStateChanged(notification: Notification) {
-        guard let slot = notification.object as? TKSmartCardSlot else { return }
-        if slot.state == .validCard {
-            print("Smart card inserted")
-            // Handle smart card insertion
-        } else {
-            print("Smart card removed")
-            // Handle smart card removal
-        }
-    }
+  
     func selectedDevice(reader:String) {
+        
         guard let slot = slotManager?.slotNamed(reader) else {
             print("Invalid reader")
             return
@@ -53,7 +46,8 @@ class SmartCardApduInterface: ApduInterface {
         print("Connecting to smart card reader: \(reader)...")
 
         
-        self.card?.beginSession {[weak self] success, error in
+        self.card?.beginSession { [weak self] success, error in
+            guard let self else { return }
             if let error = error {
                 print("Failed to connect to smart card: \(error.localizedDescription)")
                 completion(false)
@@ -69,26 +63,46 @@ class SmartCardApduInterface: ApduInterface {
         card = nil
     }
     
-    func logicalChannelOpen(aid: Data, completion: @escaping ((Int) -> Void)) {
+    func logicalChannelOpen(aid: Data, completion: ((Result<Int, Error>) -> Void)? = nil) {
         print("Opening logical channel with AID: \(aid.hexadecimal)")
         guard let initalCommand = initalCommand.hexadecimal else {
+            print("Command: \(self.initalCommand)")
+            completion?(.failure(SmartCardError.invalidCommand))
             return
         }
-        transmit(data: initalCommand) { [weak self] data in
-            guard let self, let channelCommand = channelCommand.hexadecimal else {
-                completion(-1)
+        guard let channelCommand = channelCommand.hexadecimal else {
+            print("Command: \(self.channelCommand)")
+            completion?(.failure(SmartCardError.invalidCommand))
+            return
+        }
+        func transmitCommand(command:Data,success:@escaping ((Data) -> Void)) {
+            transmit(data: command) { [weak self] result in
+                guard let self else {
+                    return
+                }
+                switch result {
+                    case .success(let response):
+                        success(response)
+                    case .failure(let error):
+                        print("Command: \(self.channelCommand)")
+                        completion?(.failure(error))
+                }
+            }
+        }
+        transmitCommand(command: initalCommand, success: { [weak self] _ in
+            guard let self else {
                 return
             }
-            transmit(data: channelCommand) { channelResp in
+            transmitCommand(command: channelCommand, success: { channelResp in
                 let channel = channelResp.prefix(2)
                 let currentChannel = channel.prefix(1)
                 let selectCommand = self.buildSelectCommand(channel: currentChannel, aid: aid)
-                self.transmit(data: selectCommand) { aidResp in
-                    completion(aidResp.hexString != "6a82" ? 1 : -1)
+                transmitCommand(command: selectCommand) { aidResp in
+                    completion?(.success(aidResp.hexString != "6a82" ? 1 : -1))
                 }
-            }
-
-        }
+            })
+            
+        })
     }
     
     func logicalChannelClose(channel: Int) {
@@ -96,46 +110,52 @@ class SmartCardApduInterface: ApduInterface {
         // Implementation would depend on the specific smart card protocol
     }
     
-    func transmit(data: Data, completion: ((Data) -> Void)? = nil) {
+    func transmit(data: Data, completion: ((Result<Data, Error>) -> Void)? = nil) {
         print("Transmitting APDU: \(data.hexadecimal)")
-        
-        do {
-            try sendApdu(command: data) { data, error in
-                if let error = error {
-                    print("Error: \(error.localizedDescription)")
-                    return
-                }
-                guard let data = data, data.count >= 2 else {
-                    print("Error: Invalid response")
-                    return
-                }
-                let sw1:UInt8 = data[data.count - 2]
-                let sw2:UInt8 = data[data.count - 1]
-                var response = data.dropLast(2)
-                response.append(sw1)
-                response.append(sw2)
-                print("data hex: \(data.hexString)")
-                print("sw1: \(sw1)")
-                print("sw2: \(sw2)")
-                completion?(response)
-                if sw1 == 0x90 && sw2 == 0x00 {
-                  
-                } else {
-                    print("Error: Response Failed")
-                }
-                
-           
+        sendApdu(command: data) { [weak self] result in
+            guard let self else { return }
+            switch result {
+                case .success(let response):
+                    guard response.count >= 2 else {
+                        completion?(.failure(SmartCardError.invalidResponse))
+                        return
+                    }
+                    completion?(.success(response))
+//                    if sw1 == 0x90 && sw2 == 0x00 {
+//                        
+//                    } else {
+//                        print("Error: Response Failed")
+//                    }
+                case .failure(let failure):
+                    completion?(.failure(failure))
             }
-        } catch {
-            print("Error transmitting APDU: \(error.localizedDescription)")
         }
     }
+    private func convertResponseStatus(data:Data) -> Data{
+        let sw1:UInt8 = data[data.count - 2]
+        let sw2:UInt8 = data[data.count - 1]
+        var response = data.dropLast(2)
+        response.append(sw1)
+        response.append(sw2)
+        print("data hex: \(data.hexString)")
+        print("sw1: \(sw1)")
+        print("sw2: \(sw2)")
+        return response
+    }
     
-    private func sendApdu(command: Data, completion: @escaping (Data?, Error?) -> Void) throws {
+    private func sendApdu(command: Data, completion: @escaping ((Result<Data, Error>) -> Void)) {
         guard let card = self.card else {
-            throw NSError(domain: "SmartCardError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Card not connected"])
+            completion(.failure(SmartCardError.cardNotConnected))
+            return
         }
-        card.transmit(command, reply: completion)
+        card.transmit(command) { data , error in
+            if let error = error {
+                completion(.failure(error))
+            } else {
+                completion(.success(data ?? Data()))
+            }
+            
+        }
     }
     
     private func buildSelectCommand(channel:Data,aid: Data) -> Data {
@@ -148,6 +168,16 @@ class SmartCardApduInterface: ApduInterface {
         command.append(aid) // AID data
         
         return command
+    }
+    @objc private func slotStateChanged(notification: Notification) {
+        guard let slot = notification.object as? TKSmartCardSlot else { return }
+        if slot.state == .validCard {
+            print("Smart card inserted")
+            // Handle smart card insertion
+        } else {
+            print("Smart card removed")
+            // Handle smart card removal
+        }
     }
 }
 

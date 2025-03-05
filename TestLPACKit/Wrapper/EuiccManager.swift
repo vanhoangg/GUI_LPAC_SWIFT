@@ -8,10 +8,14 @@
 
 import Foundation
 
+protocol EuiccDelegate: AnyObject {
+    
+}
+
 class EuiccManager {
     private let lpacManager: LpacManager
     
-    init(apduInterface: ApduInterface, httpInterface: HttpInterface) {
+    init(apduInterface: ApduInterface, httpInterface: HttpInterface) throws {
         // Create LPAC manager
         lpacManager = LpacManager(apduInterface: apduInterface, httpInterface: httpInterface)
         
@@ -20,8 +24,10 @@ class EuiccManager {
         
         // Initialize
         let result = lpacManager.initialize(isdrAid: isdrAid)
+
         if result != .success {
-            print("Failed to initialize LPAC library: \(result)")
+            throw NSError(domain: "SmartCardError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to initialize LPAC library: \(result)"])
+
         }
     }
     
@@ -29,11 +35,20 @@ class EuiccManager {
         lpacManager.cleanup()
     }
     
-    func getEID() -> String? {
-        return lpacManager.getEID()
+    func getEID() -> String {
+        do {
+            return try lpacManager.getEID()
+        } catch {
+            return "Error: failed to get EID \(error.localizedDescription)"
+        }
+        
     }
-    func getCardInfo() -> Es10cExEuiccInfo2? {
-        return lpacManager.getCardInfo()
+    func getCardInfo() throws -> Es10cExEuiccInfo2? {
+        do {
+            return try lpacManager.getCardInfo()
+        } catch {
+            throw error
+        }
     }
     
     func listProfiles() -> [ProfileInfo]? {

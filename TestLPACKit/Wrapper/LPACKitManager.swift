@@ -1,10 +1,10 @@
 import Foundation
 
 /// Main class for interacting with the LPAC library
+///
 public class LpacManager {
     // Context pointer
     private var context: lpac_context_t?
-
     // Callbacks for APDU operations
     private var apduCallbacks = lpac_apdu_interface_t()
     private var httpCallbacks = lpac_http_interface_t()
@@ -30,7 +30,9 @@ public class LpacManager {
             let manager = Unmanaged<LpacManager>.fromOpaque(userData).takeUnretainedValue()
             let semaphore = DispatchSemaphore(value: 0)
             var result: Int32 = -1
-
+            
+         
+            
             manager.apduInterface.connect { success in
                 result = success ? 0 : -1
                 semaphore.signal()
@@ -52,8 +54,14 @@ public class LpacManager {
             let aidData = Data(bytes: aid, count: Int(aidLen))
             let semaphore = DispatchSemaphore(value: 0)
             var result: Int32 = -1
-            manager.apduInterface.logicalChannelOpen(aid: aidData) { intData in
-                result = Int32(intData)
+            manager.apduInterface.logicalChannelOpen(aid: aidData) { results in
+                switch results {
+                    case .success(let intData):
+                        result = Int32(intData)
+                    case .failure(let error):
+                        break
+                        // TODO: DVH - handle error
+                }
                 semaphore.signal()
             }
 
@@ -67,16 +75,19 @@ public class LpacManager {
             manager.apduInterface.logicalChannelClose(channel: Int(channel))
         }
 
-        apduCallbacks.transmit = { rx, rxLen, tx, txLen, userData in
-            guard let userData = userData, let tx = tx else { return -1 }
+        apduCallbacks.transmit = { [weak self] rx, rxLen, tx, txLen, userData in
+            var result: Int32 = -1
+            guard let userData = userData, let tx = tx, let rx = rx, let rxLen = rxLen else {
+                // TODO(Hoang): - Handle Error
+                return result
+            }
             let manager = Unmanaged<LpacManager>.fromOpaque(userData).takeUnretainedValue()
             let semaphore = DispatchSemaphore(value: 0)
-            var result: Int32 = -1
+   
 
             let txData = Data(bytes: tx, count: Int(txLen))
-           manager.apduInterface.transmit(data: txData) { response in
-               // Set response data
-               if let rx = rx, let rxLen = rxLen, !response.isEmpty {
+           manager.apduInterface.transmit(data: txData) { results in
+               if case let .success(response) = results, !response.isEmpty {
                    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: response.count)
                    response.copyBytes(to: buffer, count: response.count)
                    rx.pointee = buffer
@@ -181,28 +192,35 @@ public class LpacManager {
 
     /// Get the EID (eUICC Identifier)
     /// - Returns: EID string or nil if an error occurred
-    public func getEID() -> String? {
-        guard let ctx = context else { return nil }
+    public func getEID() throws -> String {
+        guard let ctx = context else {
+            throw SmartCardError.missingContext
+        }
 
         var eidPtr: UnsafeMutablePointer<Int8>?
         let result = lpac_get_eid(ctx, &eidPtr)
 
         guard result == LPAC_SUCCESS, let ptr = eidPtr else {
-            return nil
+            print("Result: \(result.rawValue)")
+            print("eidPtr: \(String(describing: eidPtr))")
+            throw SmartCardError.failedGetEUICC
         }
+        print("PRT: \(String(describing: eidPtr))")
 
         let eid = String(cString: ptr)
         lpac_free_string(ptr)
         return eid
     }
-    public func getCardInfo() -> Es10cExEuiccInfo2? {
-        guard let ctx = context else { return nil }
+    public func getCardInfo() throws -> Es10cExEuiccInfo2  {
+        guard let ctx = context else {
+            throw SmartCardError.missingContext
+        }
 
         var euiccPtr: UnsafeMutablePointer<lpac_euicc_info2>?
         let result = lpac_get_euicc_info(ctx, &euiccPtr)
 
         guard result == LPAC_SUCCESS, let euicc = euiccPtr else {
-            return nil
+            throw SmartCardError.failedGetEUICC
         }
 
         // Convert C structures to Swift objects
@@ -366,7 +384,7 @@ public class LpacManager {
 }
 
 /// Swift interface for APDU operations
-public protocol ApduInterface {
+public protocol ApduInterface: AnyObject {
     /// Connect to the card
     /// - Returns: True if successful
     func connect(completion: @escaping (Bool) -> Void)
@@ -377,7 +395,7 @@ public protocol ApduInterface {
     /// Open a logical channel with the given AID
     /// - Parameter aid: AID to select
     /// - Returns: Channel number or negative value on error
-    func logicalChannelOpen(aid: Data, completion: @escaping ((Int) -> Void))
+    func logicalChannelOpen(aid: Data, completion: ((Result<Int, Error>) -> Void)?)
 
     /// Close a logical channel
     /// - Parameter channel: Channel to close
@@ -386,7 +404,7 @@ public protocol ApduInterface {
     /// Transmit data to the card
     /// - Parameter data: Data to transmit
     /// - Returns: Response data
-    func transmit(data: Data, completion: ((Data) -> Void)?)
+    func transmit(data: Data, completion: ((Result<Data, Error>) -> Void)?)
 }
 
 /// Swift interface for HTTP operations
