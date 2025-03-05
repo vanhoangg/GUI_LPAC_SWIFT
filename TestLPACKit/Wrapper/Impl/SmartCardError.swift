@@ -12,6 +12,7 @@ struct SmartCardError {
     static let cardNotConnected = NSError(domain: "SmartCardError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Card not connected"])
     static let failedGetEUICC = NSError(domain: "SmartCardError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to get EUICC Info"])
     static let missingContext = NSError(domain: "SmartCardError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing Context"])
-    
+    static let failedGetProfile = NSError(domain: "SmartCardError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to get Profile Info"])
+
 
 }

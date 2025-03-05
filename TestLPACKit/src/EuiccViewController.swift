@@ -1,16 +1,20 @@
 import UIKit
-import CoreNFC
+import AVFoundation
 
-class EuiccViewController: UIViewController {
+
+class EuiccViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
     
     // MARK: - UI Components
     
     private let tableView = UITableView()
+    var captureSession: AVCaptureSession? = AVCaptureSession()
+    var previewLayer: AVCaptureVideoPreviewLayer!
     private let activityIndicator = UIActivityIndicatorView(style: .large)
     private let downloadProgressLabel = UILabel()
     private let downloadProgressView = UIProgressView(progressViewStyle: .bar)
     private let activationCodeTextField = UITextField()
     private let downloadButton = UIButton(type: .system)
+    let cameraView = UIView()
 
     private let responseTextView = UITextView()
     // MARK: - Properties
@@ -21,20 +25,44 @@ class EuiccViewController: UIViewController {
     
     // MARK: - Lifecycle
     
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        
+        if (captureSession?.isRunning == true) {
+            captureSession?.stopRunning()
+        }
+    }
     override func viewDidLoad() {
         super.viewDidLoad()
-        setupUI()
+        setUpCamera()
         setupEuiccManager()
+        setupUI()
+    
+        
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        if (captureSession?.isRunning == false) {
+            captureSession?.startRunning()
+        }
         refreshProfiles()
+        
     }
     
     // MARK: - Setup
-    
+   
     private func setupUI() {
+        guard let captureSession else { return }
+        previewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
+        previewLayer.videoGravity = .resizeAspectFill
+        cameraView.layer.addSublayer(previewLayer)
+        DispatchQueue.global(qos: .userInitiated).async {
+            captureSession.startRunning()
+        }
+
+        
+        
         title = "eSIM Manager"
         view.backgroundColor = .systemBackground
         
@@ -49,8 +77,8 @@ class EuiccViewController: UIViewController {
         responseTextView.font = UIFont.systemFont(ofSize: 12)
         responseTextView.textColor = .secondaryLabel
         responseTextView.textAlignment = .center
-        
-        // Configure table view
+//        
+//        // Configure table view
         tableView.register(ProfileCell.self, forCellReuseIdentifier: "ProfileCell")
         tableView.delegate = self
         tableView.dataSource = self
@@ -77,6 +105,7 @@ class EuiccViewController: UIViewController {
         
         // Add subviews
         view.addSubview(responseTextView)
+        view.addSubview(cameraView)
         view.addSubview(tableView)
         view.addSubview(activationCodeTextField)
         view.addSubview(downloadButton)
@@ -89,6 +118,7 @@ class EuiccViewController: UIViewController {
     
     private func setupConstraints() {
         responseTextView.translatesAutoresizingMaskIntoConstraints = false
+        cameraView.translatesAutoresizingMaskIntoConstraints = false
         tableView.translatesAutoresizingMaskIntoConstraints = false
         activationCodeTextField.translatesAutoresizingMaskIntoConstraints = false
         downloadButton.translatesAutoresizingMaskIntoConstraints = false
@@ -102,11 +132,17 @@ class EuiccViewController: UIViewController {
             responseTextView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             responseTextView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             
+            
+            cameraView.topAnchor.constraint(equalTo: responseTextView.bottomAnchor, constant: 8),
+            cameraView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            cameraView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 8),
+            cameraView.heightAnchor.constraint(equalTo: cameraView.widthAnchor,multiplier: 1),
+
             // Table view below EID label
-            tableView.topAnchor.constraint(equalTo: responseTextView.bottomAnchor, constant: 8),
+            tableView.topAnchor.constraint(equalTo: cameraView.bottomAnchor, constant: 8),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.5),
+            tableView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.3),
             
             // Input field below table view
             activationCodeTextField.topAnchor.constraint(equalTo: tableView.bottomAnchor, constant: 16),
@@ -132,6 +168,10 @@ class EuiccViewController: UIViewController {
             activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            previewLayer.frame = cameraView.layer.bounds
+        }
     }
     
     private func setupEuiccManager() {
@@ -147,10 +187,11 @@ class EuiccViewController: UIViewController {
             euiccManager = try EuiccManager(apduInterface: apduInterface, httpInterface: httpInterface)
             // Attempt to get EID
             let eid = euiccManager?.getEID()
-            responseTextView.text += "EID: \(eid)"
+            responseTextView.text += "EID: \(String(describing: eid))"
             if let eidInfo = try? euiccManager?.getCardInfo() {
                 print(eidInfo.toJsonString())
             }
+           
         } catch {
             responseTextView.text += error.localizedDescription
         }
@@ -164,21 +205,27 @@ class EuiccViewController: UIViewController {
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            
-            if let profiles = self.euiccManager?.listProfiles() {
-                DispatchQueue.main.async {
-                    self.profiles = profiles
-                    self.tableView.reloadData()
-                    self.activityIndicator.stopAnimating()
-                    self.tableView.isHidden = false
+            do {
+                if let profiles = try self.euiccManager?.listProfiles() {
+                    DispatchQueue.main.async {
+                        self.profiles = profiles
+                        for profile in profiles {
+                            print("Profile \(profile.toJsonString())")
+                            
+                        }
+                        self.tableView.reloadData()
+                        self.activityIndicator.stopAnimating()
+                        self.tableView.isHidden = false
+                    }
                 }
-            } else {
+            } catch {
                 DispatchQueue.main.async {
-                    self.showAlert(title: "Error", message: "Failed to retrieve profiles")
                     self.activityIndicator.stopAnimating()
                     self.tableView.isHidden = false
+                    self.showAlert(title: "Error", message: "Failed to retrieve profiles \(error.localizedDescription)")
                 }
             }
+            
         }
     }
     
@@ -441,6 +488,75 @@ extension EuiccViewController: UITableViewDelegate, UITableViewDataSource {
     
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         return 80
+    }
+}
+
+// MARK: - Setup Camera
+extension EuiccViewController {
+    private func setUpCamera() {
+        
+        guard let videoCaptureDevice = AVCaptureDevice.default(for: .video), let captureSession else { return }
+        let videoInput: AVCaptureDeviceInput
+        
+        do {
+            videoInput = try AVCaptureDeviceInput(device: videoCaptureDevice)
+        } catch {
+            return
+        }
+        
+        if (captureSession.canAddInput(videoInput)) {
+            captureSession.addInput(videoInput)
+        } else {
+            failed()
+            return
+        }
+        
+        let metadataOutput = AVCaptureMetadataOutput()
+        
+        if (captureSession.canAddOutput(metadataOutput)) {
+            captureSession.addOutput(metadataOutput)
+            
+            metadataOutput.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
+            metadataOutput.metadataObjectTypes = [.qr]
+        } else {
+            failed()
+            return
+        }
+      
+ 
+
+    }
+    func failed() {
+        let ac = UIAlertController(title: "Scanning not supported", message: "Your device does not support scanning a code from an item. Please use a device with a camera.", preferredStyle: .alert)
+        ac.addAction(UIAlertAction(title: "OK", style: .default))
+        present(ac, animated: true)
+        captureSession = nil
+    }
+    
+    func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
+        captureSession?.stopRunning()
+        
+        if let metadataObject = metadataObjects.first {
+            guard let readableObject = metadataObject as? AVMetadataMachineReadableCodeObject else { return }
+            guard let stringValue = readableObject.stringValue else { return }
+            AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
+            found(code: stringValue)
+        }
+        
+        dismiss(animated: true)
+    }
+    
+    func found(code: String) {
+        print(code)
+        activationCodeTextField.text = code
+    }
+    
+    override var prefersStatusBarHidden: Bool {
+        return true
+    }
+    
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        return .portrait
     }
 }
 

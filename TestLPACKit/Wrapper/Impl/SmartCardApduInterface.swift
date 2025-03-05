@@ -64,7 +64,7 @@ class SmartCardApduInterface: ApduInterface {
     }
     
     func logicalChannelOpen(aid: Data, completion: ((Result<Int, Error>) -> Void)? = nil) {
-        print("Opening logical channel with AID: \(aid.hexadecimal)")
+        print("logicalChannelOpen: - Opening logical channel with AID: \(aid.hexadecimal)")
         guard let initalCommand = initalCommand.hexadecimal else {
             print("Command: \(self.initalCommand)")
             completion?(.failure(SmartCardError.invalidCommand))
@@ -168,16 +168,6 @@ class SmartCardApduInterface: ApduInterface {
         command.append(aid) // AID data
         
         return command
-    }
-    @objc private func slotStateChanged(notification: Notification) {
-        guard let slot = notification.object as? TKSmartCardSlot else { return }
-        if slot.state == .validCard {
-            print("Smart card inserted")
-            // Handle smart card insertion
-        } else {
-            print("Smart card removed")
-            // Handle smart card removal
-        }
     }
 }
 

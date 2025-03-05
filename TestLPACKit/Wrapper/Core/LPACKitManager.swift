@@ -12,7 +12,14 @@ public class LpacManager {
     // Store Swift implementation objects
     private let apduInterface: ApduInterface
     private let httpInterface: HttpInterface
-
+    // Download progress callback wrapper
+    private let downloadCallback: @convention(c) (lpac_download_state_t, UnsafeMutableRawPointer?) -> Void = { state, userData in
+        guard let userData = userData else { return }
+        let manager = Unmanaged<LpacManager>.fromOpaque(userData).takeUnretainedValue()
+        let swiftState = LpacDownloadState(rawValue: Int(state.rawValue)) ?? .preparing
+        manager.downloadCallbackHolder?(swiftState)
+    }
+    
     // Retain callback references
     private var downloadCallbackHolder: ((LpacDownloadState) -> Void)?
 
@@ -30,9 +37,7 @@ public class LpacManager {
             let manager = Unmanaged<LpacManager>.fromOpaque(userData).takeUnretainedValue()
             let semaphore = DispatchSemaphore(value: 0)
             var result: Int32 = -1
-            
-         
-            
+
             manager.apduInterface.connect { success in
                 result = success ? 0 : -1
                 semaphore.signal()
@@ -83,7 +88,6 @@ public class LpacManager {
             }
             let manager = Unmanaged<LpacManager>.fromOpaque(userData).takeUnretainedValue()
             let semaphore = DispatchSemaphore(value: 0)
-   
 
             let txData = Data(bytes: tx, count: Int(txLen))
            manager.apduInterface.transmit(data: txData) { results in
@@ -201,17 +205,16 @@ public class LpacManager {
         let result = lpac_get_eid(ctx, &eidPtr)
 
         guard result == LPAC_SUCCESS, let ptr = eidPtr else {
-            print("Result: \(result.rawValue)")
-            print("eidPtr: \(String(describing: eidPtr))")
+            print("GET EUID: Result: \(result.rawValue)")
+            print("GET EUID: eidPtr: \(String(describing: eidPtr))")
             throw SmartCardError.failedGetEUICC
         }
-        print("PRT: \(String(describing: eidPtr))")
 
         let eid = String(cString: ptr)
         lpac_free_string(ptr)
         return eid
     }
-    public func getCardInfo() throws -> Es10cExEuiccInfo2  {
+    public func getCardInfo() throws -> Es10cExEuiccInfo2 {
         guard let ctx = context else {
             throw SmartCardError.missingContext
         }
@@ -236,12 +239,12 @@ public class LpacManager {
         euiccInfo.certificationDataObject?.discoveryBaseURL = euicc.pointee.certificationDataObject.discoveryBaseURL != nil ? String(cString: euicc.pointee.certificationDataObject.discoveryBaseURL): nil
         euiccInfo.certificationDataObject?.platformLabel = euicc.pointee.certificationDataObject.platformLabel != nil ? String(cString: euicc.pointee.certificationDataObject.platformLabel): nil
 
-        euiccInfo.uiccCapability = euicc.pointee.uiccCapability != nil ? convertCArrayToStringArray(cArray: euicc.pointee.uiccCapability) : nil
-        euiccInfo.rspCapability = euicc.pointee.rspCapability != nil ? convertCArrayToStringArray(cArray: euicc.pointee.rspCapability): nil
-        euiccInfo.forbiddenProfilePolicyRules = euicc.pointee.forbiddenProfilePolicyRules != nil ? convertCArrayToStringArray(cArray: euicc.pointee.forbiddenProfilePolicyRules) : nil
+        euiccInfo.uiccCapability = euicc.pointee.uiccCapability != nil ? LPACKitUtils.convertCArrayToStringArray(cArray: euicc.pointee.uiccCapability) : nil
+        euiccInfo.rspCapability = euicc.pointee.rspCapability != nil ? LPACKitUtils.convertCArrayToStringArray(cArray: euicc.pointee.rspCapability): nil
+        euiccInfo.forbiddenProfilePolicyRules = euicc.pointee.forbiddenProfilePolicyRules != nil ? LPACKitUtils.convertCArrayToStringArray(cArray: euicc.pointee.forbiddenProfilePolicyRules) : nil
 
-        euiccInfo.euiccCiPKIdListForVerification = euicc.pointee.euiccCiPKIdListForVerification != nil ? convertCArrayToStringArray(cArray: euicc.pointee.euiccCiPKIdListForVerification): nil
-        euiccInfo.euiccCiPKIdListForSigning = euicc.pointee.euiccCiPKIdListForSigning != nil ? convertCArrayToStringArray(cArray: euicc.pointee.euiccCiPKIdListForSigning): nil
+        euiccInfo.euiccCiPKIdListForVerification = euicc.pointee.euiccCiPKIdListForVerification != nil ? LPACKitUtils.convertCArrayToStringArray(cArray: euicc.pointee.euiccCiPKIdListForVerification): nil
+        euiccInfo.euiccCiPKIdListForSigning = euicc.pointee.euiccCiPKIdListForSigning != nil ? LPACKitUtils.convertCArrayToStringArray(cArray: euicc.pointee.euiccCiPKIdListForSigning): nil
 
         var cardResource = ExtCardResource()
         cardResource.freeNonVolatileMemory = euicc.pointee.freeNonVolatileMemory
@@ -253,18 +256,73 @@ public class LpacManager {
         return euiccInfo
     }
 
-    /// Get profile information
-    /// - Returns: Array of profiles or nil if an error occurred
-    public func getProfilesInfo() -> [ProfileInfo]? {
-        guard let ctx = context else { return nil }
 
-        var profilesPtr: UnsafeMutablePointer<lpac_profile_list_t>?
-        let result = lpac_get_profiles_info(ctx, &profilesPtr)
-
-        guard result == LPAC_SUCCESS, let profiles = profilesPtr else {
+    
+    
+    /// Cancel all ongoing download sessions
+    public func cancelSessions() {
+        guard let ctx = context else { return }
+        lpac_cancel_sessions(ctx)
+    }
+}
+// MARK: - Notification Handle
+extension LpacManager {
+    // List notifications
+    public func listNotifications() -> [Notification]? {
+        var notificationsPtr: UnsafeMutablePointer<lpac_notification_list_t>?
+        let result = lpac_list_notifications(context, &notificationsPtr)
+        
+        guard result == LPAC_SUCCESS, let notifications = notificationsPtr?.pointee else {
             return nil
         }
-
+        
+        var notificationList = [Notification]()
+        for i in 0..<Int(notifications.count) {
+            let notification = notifications.notifications[i]
+            let swiftNotification = Notification(
+                seqNumber: notification.seq_number,
+                notificationAddress: String(cString: notification.notification_address),
+                iccid: String(cString: notification.iccid),
+                operation: Notification.Operation(rawValue: Int(notification.operation)) ?? .unknown
+            )
+            notificationList.append(swiftNotification)
+        }
+        
+        lpac_free_notification_list(notificationsPtr)
+        return notificationList
+    }
+    
+    // Handle notification
+    public func handleNotification(seqNumber: UInt64) -> Bool {
+        let result = lpac_handle_notification(context, seqNumber)
+        return result == LPAC_SUCCESS
+    }
+    
+    // Delete notification
+    public func deleteNotification(seqNumber: UInt64) -> Bool {
+        let result = lpac_delete_notification(context, seqNumber)
+        return result == LPAC_SUCCESS
+    }
+}
+// MARK: - Profile Handle
+extension LpacManager {
+    
+    /// Get profile information
+    /// - Returns: Array of profiles or nil if an error occurred
+    public func getProfilesInfo() throws -> [ProfileInfo] {
+        guard let ctx = context else {
+            throw SmartCardError.missingContext
+        }
+        
+        var profilesPtr: UnsafeMutablePointer<lpac_profile_list_t>?
+        let result = lpac_get_profiles_info(ctx, &profilesPtr)
+        
+        guard result == LPAC_SUCCESS, let profiles = profilesPtr else {
+            print("GET PROFILE: result \(result)")
+            print("GET PROFILE: profilesPtr \(String(describing: profilesPtr))")
+            throw SmartCardError.failedGetProfile
+        }
+        
         // Convert C structures to Swift objects
         var profileArray = [ProfileInfo]()
         for i in 0..<Int(profiles.pointee.count) {
@@ -280,11 +338,11 @@ public class LpacManager {
             )
             profileArray.append(profileInfo)
         }
-
+        
         lpac_free_profile_list(profiles)
         return profileArray
     }
-
+    
     /// Enable a profile
     /// - Parameters:
     ///   - iccid: ICCID of the profile to enable
@@ -292,11 +350,11 @@ public class LpacManager {
     /// - Returns: LpacError code
     public func enableProfile(iccid: String, refresh: Bool = true) -> LpacError {
         guard let ctx = context else { return .general }
-
+        
         let result = lpac_enable_profile(ctx, iccid, refresh)
         return LpacError(rawValue: Int(result.rawValue)) ?? .general
     }
-
+    
     /// Disable a profile
     /// - Parameters:
     ///   - iccid: ICCID of the profile to disable
@@ -304,21 +362,21 @@ public class LpacManager {
     /// - Returns: LpacError code
     public func disableProfile(iccid: String, refresh: Bool = true) -> LpacError {
         guard let ctx = context else { return .general }
-
+        
         let result = lpac_disable_profile(ctx, iccid, refresh)
         return LpacError(rawValue: Int(result.rawValue)) ?? .general
     }
-
+    
     /// Delete a profile
     /// - Parameter iccid: ICCID of the profile to delete
     /// - Returns: LpacError code
     public func deleteProfile(iccid: String) -> LpacError {
         guard let ctx = context else { return .general }
-
+        
         let result = lpac_delete_profile(ctx, iccid)
         return LpacError(rawValue: Int(result.rawValue)) ?? .general
     }
-
+    
     /// Set nickname for a profile
     /// - Parameters:
     ///   - iccid: ICCID of the profile
@@ -326,19 +384,11 @@ public class LpacManager {
     /// - Returns: LpacError code
     public func setNickname(iccid: String, nickname: String) -> LpacError {
         guard let ctx = context else { return .general }
-
+        
         let result = lpac_set_nickname(ctx, iccid, nickname)
         return LpacError(rawValue: Int(result.rawValue)) ?? .general
     }
-
-    // Download progress callback wrapper
-    private let downloadCallback: @convention(c) (lpac_download_state_t, UnsafeMutableRawPointer?) -> Void = { state, userData in
-        guard let userData = userData else { return }
-        let manager = Unmanaged<LpacManager>.fromOpaque(userData).takeUnretainedValue()
-        let swiftState = LpacDownloadState(rawValue: Int(state.rawValue)) ?? .preparing
-        manager.downloadCallbackHolder?(swiftState)
-    }
-
+    
     /// Download a profile
     /// - Parameters:
     ///   - smdp: SM-DP+ address
@@ -355,13 +405,13 @@ public class LpacManager {
         progressHandler: ((LpacDownloadState) -> Void)? = nil
     ) -> LpacError {
         guard let ctx = context else { return .general }
-
+        
         // Save the Swift callback
         self.downloadCallbackHolder = progressHandler
-
+        
         // Get a self reference for the callback
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-
+        
         // Call the C function
         let result = lpac_download_profile(
             ctx,
@@ -372,188 +422,13 @@ public class LpacManager {
             progressHandler != nil ? downloadCallback : nil,
             selfPtr
         )
-
+        
         return LpacError(rawValue: Int(result.rawValue)) ?? .general
     }
-
-    /// Cancel all ongoing download sessions
-    public func cancelSessions() {
-        guard let ctx = context else { return }
-        lpac_cancel_sessions(ctx)
-    }
 }
 
-/// Swift interface for APDU operations
-public protocol ApduInterface: AnyObject {
-    /// Connect to the card
-    /// - Returns: True if successful
-    func connect(completion: @escaping (Bool) -> Void)
 
-    /// Disconnect from the card
-    func disconnect()
 
-    /// Open a logical channel with the given AID
-    /// - Parameter aid: AID to select
-    /// - Returns: Channel number or negative value on error
-    func logicalChannelOpen(aid: Data, completion: ((Result<Int, Error>) -> Void)?)
 
-    /// Close a logical channel
-    /// - Parameter channel: Channel to close
-    func logicalChannelClose(channel: Int)
 
-    /// Transmit data to the card
-    /// - Parameter data: Data to transmit
-    /// - Returns: Response data
-    func transmit(data: Data, completion: ((Result<Data, Error>) -> Void)?)
-}
-
-/// Swift interface for HTTP operations
-public protocol HttpInterface {
-    /// HTTP response structure
-    typealias HttpResponse = (data: Data, statusCode: Int, success: Bool)
-
-    /// Transmit data via HTTP
-    /// - Parameters:
-    ///   - url: URL to connect to
-    ///   - headers: HTTP headers
-    ///   - data: Data to transmit (or nil for GET)
-    /// - Returns: HTTP response
-    func transmit(url: String, headers: [String: String], data: Data?) -> HttpResponse
-}
-
-/// Profile information structure
-public struct ProfileInfo {
-    public let iccid: String?
-    public let name: String?
-    public let provider: String?
-    public let nickname: String?
-    public let isdpAid: String?
-    public let state: LpacProfileState
-    public let profileClass: LpacProfileClass
-}
-
-public struct ExtCardResource {
-    var installedApplication: UInt32?
-    var freeNonVolatileMemory: UInt32?
-    var freeVolatileMemory: UInt32?
-    func toJsonString() -> String {
-        var dict = [String: Any]()
-        if let installedApplication = installedApplication {
-            dict["installedApplication"] = installedApplication
-        }
-        if let freeNonVolatileMemory = freeNonVolatileMemory {
-            dict["freeNonVolatileMemory"] = freeNonVolatileMemory
-        }
-        if let freeVolatileMemory = freeVolatileMemory {
-            dict["freeVolatileMemory"] = freeVolatileMemory
-        }
-        let jsonData = try? JSONSerialization.data(withJSONObject: dict, options: [])
-        return jsonData.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-    }
-}
-
-public struct CertificationDataObject {
-    var platformLabel: String?
-    var discoveryBaseURL: String?
-    func toJsonString() -> String {
-        var dict = [String: Any]()
-        if let platformLabel = platformLabel {
-            dict["platformLabel"] = platformLabel
-        }
-        if let discoveryBaseURL = discoveryBaseURL {
-            dict["discoveryBaseURL"] = discoveryBaseURL
-        }
-        let jsonData = try? JSONSerialization.data(withJSONObject: dict, options: [])
-        return jsonData.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-    }
-}
-
-public struct Es10cExEuiccInfo2 {
-    var profileVersion: String?
-    var svn: String?
-    var euiccFirmwareVer: String?
-    var extCardResource: ExtCardResource?
-    var uiccCapability: [String]?
-    var ts102241Version: String?
-    var globalplatformVersion: String?
-    var rspCapability: [String]?
-    var euiccCiPKIdListForVerification: [String]?
-    var euiccCiPKIdListForSigning: [String]?
-    var euiccCategory: String?
-    var forbiddenProfilePolicyRules: [String]?
-    var ppVersion: String?
-    var sasAcreditationNumber: String?
-    var certificationDataObject: CertificationDataObject?
-
-    func toJsonString() -> String {
-        var dict = [String: Any]()
-        if let profileVersion = profileVersion {
-            dict["profileVersion"] = profileVersion
-        }
-        if let svn = svn {
-            dict["svn"] = svn
-        }
-        if let euiccFirmwareVer = euiccFirmwareVer {
-            dict["euiccFirmwareVer"] = euiccFirmwareVer
-        }
-        if let extCardResource = extCardResource {
-            dict["extCardResource"] = extCardResource.toJsonString()
-        }
-        if let uiccCapability = uiccCapability {
-            dict["uiccCapability"] = uiccCapability
-        }
-        if let ts102241Version = ts102241Version {
-            dict["ts102241Version"] = ts102241Version
-        }
-        if let globalplatformVersion = globalplatformVersion {
-            dict["globalplatformVersion"] = globalplatformVersion
-        }
-        if let rspCapability = rspCapability {
-            dict["rspCapability"] = rspCapability
-        }
-        if let euiccCiPKIdListForVerification = euiccCiPKIdListForVerification {
-            dict["euiccCiPKIdListForVerification"] = euiccCiPKIdListForVerification
-        }
-        if let euiccCiPKIdListForSigning = euiccCiPKIdListForSigning {
-            dict["euiccCiPKIdListForSigning"] = euiccCiPKIdListForSigning
-        }
-        if let euiccCategory = euiccCategory {
-            dict["euiccCategory"] = euiccCategory
-        }
-        if let forbiddenProfilePolicyRules = forbiddenProfilePolicyRules {
-            dict["forbiddenProfilePolicyRules"] = forbiddenProfilePolicyRules
-        }
-        if let ppVersion = ppVersion {
-            dict["ppVersion"] = ppVersion
-        }
-        if let sasAcreditationNumber = sasAcreditationNumber {
-            dict["sasAcreditationNumber"] = sasAcreditationNumber
-        }
-        if let certificationDataObject = certificationDataObject {
-            dict["certificationDataObject"] = certificationDataObject.toJsonString()
-        }
-        let jsonData = try? JSONSerialization.data(withJSONObject: dict, options: [])
-        return jsonData.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-    }
-}
-public func convertCArrayToStringArray(cArray: UnsafeMutablePointer<UnsafePointer<Int8>?>) -> [String] {
-    var intArray = [String]()
-    var index = 0
-
-    while let cString = cArray[index] {
-        intArray.append(String(cString: cString))
-        index += 1
-    }
-
-    return intArray
-}
-private func convertCArrayToStringArray(cArray: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>) -> [String] {
-    var stringArray = [String]()
-    var index = 0
-    while let cString = cArray[index] {
-            stringArray.append(String(cString: cString))
-        index += 1
-    }
-
-    return stringArray
-}
+// Define the Notification struct

@@ -43,7 +43,7 @@ class EuiccManager {
         }
         
     }
-    func getCardInfo() throws -> Es10cExEuiccInfo2? {
+    func getCardInfo() throws -> Es10cExEuiccInfo2 {
         do {
             return try lpacManager.getCardInfo()
         } catch {
@@ -51,8 +51,8 @@ class EuiccManager {
         }
     }
     
-    func listProfiles() -> [ProfileInfo]? {
-        return lpacManager.getProfilesInfo()
+    func listProfiles() throws -> [ProfileInfo] {
+        return try lpacManager.getProfilesInfo()
     }
     
     func enableProfile(iccid: String) -> Bool {
