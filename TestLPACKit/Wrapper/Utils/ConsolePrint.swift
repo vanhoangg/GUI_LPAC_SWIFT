@@ -17,13 +17,8 @@ public func print(_ items: String...,
                   separator: String = " ",
                   terminator: String = "🔹──────────────────────────────🔹") {
     let logger = Logger(subsystem: Date().debugDescription, category: URL(fileURLWithPath: filename).lastPathComponent)
-    
-    let file = "🔹 \(URL(fileURLWithPath: filename).lastPathComponent) "
-    let called = "🔹 Function: \(function) "
-    let line = "🔹 Line: \(line) "
-
-    let output = "🔹 \(items.compactMap { $0 }.joined(separator: separator))"
-    logger.info("\(terminator)\n\(file)\n\(called)\n\(line)\n\(output)\n\(terminator)")
+    let output = "\(items.compactMap { $0 }.joined(separator: separator))"
+    logger.info("\(terminator)\n\(output)\n\(terminator)")
 //    Swift.print(pretty+output, terminator: terminator)
 
 }

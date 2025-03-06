@@ -133,23 +133,38 @@ public class LpacManager {
             }
 
             // Call Swift implementation
-            let result = manager.httpInterface.transmit(url: urlString, headers: headerDict, data: txData)
+            var responseTrasnmit:Int32 = -1
+            let semaphore = DispatchSemaphore(value: 0)
 
-            // Set response code
-            if let rcode = rcode {
-                rcode.pointee = UInt32(result.statusCode)
+            manager.httpInterface.transmit(url: urlString, headers: headerDict, data: txData) { result in
+                switch result {
+                    case .success(let response):
+                        // Set response code
+                        
+                        print("response \(response.statusCode)")
+                        if let rcode = rcode {
+                            rcode.pointee = UInt32(response.statusCode)
+                        }
+                        
+                        print("response.data \(response.data)")
+                        
+
+                        // Set response data
+                        if let rx = rx, let rxLen = rxLen, !response.data.isEmpty {
+                            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: response.data.count)
+                            response.data.copyBytes(to: buffer, count: response.data.count)
+                            print("buffer \(buffer)")
+                            rx.pointee = buffer
+                            rxLen.pointee = UInt32(response.data.count)
+                            responseTrasnmit = 0
+                        }
+                    case .failure(let failure):
+                        print(failure.localizedDescription)
+                }
+                semaphore.signal()
             }
-
-            // Set response data
-            if let rx = rx, let rxLen = rxLen, !result.data.isEmpty {
-                let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: result.data.count)
-                result.data.copyBytes(to: buffer, count: result.data.count)
-                rx.pointee = buffer
-                rxLen.pointee = UInt32(result.data.count)
-                return 0
-            }
-
-            return result.success ? 0 : -1
+            semaphore.wait()
+            return responseTrasnmit
         }
     }
 

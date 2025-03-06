@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		73DCF5342D783DC300B8B099 /* NIOSSL in Frameworks */ = {isa = PBXBuildFile; productRef = 73DCF5332D783DC300B8B099 /* NIOSSL */; };
+		73DCF5372D783E0000B8B099 /* AsyncHTTPClient in Frameworks */ = {isa = PBXBuildFile; productRef = 73DCF5362D783E0000B8B099 /* AsyncHTTPClient */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		73DD0B822D71A44B006E3A8F /* TestLPACKit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TestLPACKit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -36,6 +41,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				73DCF5372D783E0000B8B099 /* AsyncHTTPClient in Frameworks */,
+				73DCF5342D783DC300B8B099 /* NIOSSL in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +85,8 @@
 			);
 			name = TestLPACKit;
 			packageProductDependencies = (
+				73DCF5332D783DC300B8B099 /* NIOSSL */,
+				73DCF5362D783E0000B8B099 /* AsyncHTTPClient */,
 			);
 			productName = TestLPACKit;
 			productReference = 73DD0B822D71A44B006E3A8F /* TestLPACKit.app */;
@@ -109,6 +118,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				73DCF52F2D783BC300B8B099 /* XCRemoteSwiftPackageReference "swift-nio" */,
+				73DCF5322D783DC300B8B099 /* XCRemoteSwiftPackageReference "swift-nio-ssl" */,
+				73DCF5352D783E0000B8B099 /* XCRemoteSwiftPackageReference "async-http-client" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 73DD0B832D71A44B006E3A8F /* Products */;
@@ -350,7 +361,36 @@
 				minimumVersion = 2.81.0;
 			};
 		};
+		73DCF5322D783DC300B8B099 /* XCRemoteSwiftPackageReference "swift-nio-ssl" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-nio-ssl.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.29.3;
+			};
+		};
+		73DCF5352D783E0000B8B099 /* XCRemoteSwiftPackageReference "async-http-client" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swift-server/async-http-client.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.25.2;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		73DCF5332D783DC300B8B099 /* NIOSSL */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 73DCF5322D783DC300B8B099 /* XCRemoteSwiftPackageReference "swift-nio-ssl" */;
+			productName = NIOSSL;
+		};
+		73DCF5362D783E0000B8B099 /* AsyncHTTPClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 73DCF5352D783E0000B8B099 /* XCRemoteSwiftPackageReference "async-http-client" */;
+			productName = AsyncHTTPClient;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 73DD0B7A2D71A44B006E3A8F /* Project object */;
 }
