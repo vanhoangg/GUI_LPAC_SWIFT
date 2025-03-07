@@ -26,6 +26,7 @@ typedef NS_ENUM(NSInteger, LpacDownloadState) {
     LpacDownloadStateAuthenticating = LPAC_DOWNLOAD_STATE_AUTHENTICATING,
     LpacDownloadStateDownloading = LPAC_DOWNLOAD_STATE_DOWNLOADING,
     LpacDownloadStateFinalizing = LPAC_DOWNLOAD_STATE_FINALIZING
+
 };
 
 typedef NS_ENUM(NSInteger, LpacProfileState) {

@@ -1887,6 +1887,10 @@ static cJSON *get_object_item(const cJSON * const object, const char * const nam
     }
 
     current_element = object->child;
+    cJSON_Print(object);
+    cJSON_Print(current_element);
+
+
     if (case_sensitive)
     {
         while ((current_element != NULL) && (current_element->string != NULL) && (strcmp(name, current_element->string) != 0))

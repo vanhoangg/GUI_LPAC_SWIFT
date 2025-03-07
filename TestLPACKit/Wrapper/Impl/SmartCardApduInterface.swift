@@ -8,45 +8,45 @@
 import Foundation
 import CryptoTokenKit
 
+public struct UICCPort {
+    var card: TKSmartCard?
+    var slot: String?
+    var channel: String?
+    var channelIndex:Int?
+    init(card: TKSmartCard? = nil, slot: String? = nil, cardIndex: Int? = nil, channel: String? = nil, channelIndex: Int? = nil) {
+        self.card = card
+        self.slot = slot
+        self.channel = channel
+        self.channelIndex = channelIndex
+    }
+}
 class SmartCardApduInterface: ApduInterface {
-
-
-    
-    private var card: TKSmartCard?
-    private var slotManager: TKSmartCardSlotManager? = TKSmartCardSlotManager.default
-    private var slot: TKSmartCardSlot?
+    static let shared = SmartCardApduInterface()
+    var port: UICCPort = UICCPort()
     
     let initalCommand = "80AA00000AA9088100820101830107"
     let channelCommand = "0070000001"
-
-  
-    func selectedDevice(reader:String) {
-        
-        guard let slot = slotManager?.slotNamed(reader) else {
-            print("Invalid reader")
-            return
+    
+    func selectedDevice(reader:String) throws {
+        guard let slotManager = TKSmartCardSlotManager.default,let slot = slotManager.slotNamed( reader) else {
+            throw SmartCardError.invalidReader
         }
-        
         guard let card = slot.makeSmartCard() else {
-            print("No card found in reader")
-            return
+            throw SmartCardError.missingCard
         }
-        self.card = card
-        self.slot = slot
+        
+        self.port.card = card
+        self.port.slot = slot.name
     }
     
     func connect(completion: @escaping (Bool) -> Void) {
-        let reader = TKSmartCardSlotManager.default?.slotNames.first
-        guard let reader else {
+        guard let reader = self.port.slot else {
+            print(SmartCardError.invalidReader.localizedDescription)
             completion(false)
             return
         }
-        selectedDevice(reader: reader)
-  
         print("Connecting to smart card reader: \(reader)...")
-
-        
-        self.card?.beginSession { [weak self] success, error in
+        self.port.card?.beginSession { [weak self] success, error in
             guard let self else { return }
             if let error = error {
                 print("Failed to connect to smart card: \(error.localizedDescription)")
@@ -59,12 +59,12 @@ class SmartCardApduInterface: ApduInterface {
     
     func disconnect() {
         print("Disconnecting from smart card...")
-        card?.endSession()
-        card = nil
+        port.card?.endSession()
+        port.card = nil
     }
     
     func logicalChannelOpen(aid: Data, completion: ((Result<Int, Error>) -> Void)? = nil) {
-        print("logicalChannelOpen: - Opening logical channel with AID: \(aid.hexadecimal)")
+        print("logicalChannelOpen: - Opening logical channel with AID: \(aid.hexString)")
         guard let initalCommand = initalCommand.hexadecimal else {
             print("Command: \(self.initalCommand)")
             completion?(.failure(SmartCardError.invalidCommand))
@@ -96,8 +96,10 @@ class SmartCardApduInterface: ApduInterface {
             transmitCommand(command: channelCommand, success: { channelResp in
                 let channel = channelResp.prefix(2)
                 let currentChannel = channel.prefix(1)
+                
                 let selectCommand = self.buildSelectCommand(channel: currentChannel, aid: aid)
                 transmitCommand(command: selectCommand) { aidResp in
+                    self.port.channel = currentChannel.hexString
                     completion?(.success(aidResp.hexString != "6a82" ? 1 : -1))
                 }
             })
@@ -111,7 +113,7 @@ class SmartCardApduInterface: ApduInterface {
     }
     
     func transmit(data: Data, completion: ((Result<Data, Error>) -> Void)? = nil) {
-        print("Transmitting APDU: \(data.hexadecimal)")
+        print("Transmitting APDU: \(data.hexString)")
         sendApdu(command: data) { [weak self] result in
             guard let self else { return }
             switch result {
@@ -144,7 +146,7 @@ class SmartCardApduInterface: ApduInterface {
     }
     
     private func sendApdu(command: Data, completion: @escaping ((Result<Data, Error>) -> Void)) {
-        guard let card = self.card else {
+        guard let card = self.port.card else {
             completion(.failure(SmartCardError.cardNotConnected))
             return
         }

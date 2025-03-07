@@ -21,9 +21,15 @@ public protocol HttpInterface {
     func transmit(url: String, headers: [String: String], data: Data?,completion: @escaping (Result<HttpInterface.HttpResponse,any Error>) -> Void )
 }
 
-class NetworkHttpInterface: NSObject, HttpInterface {
+class HttpInterfaceImpl: NSObject, HttpInterface {
+    static let shared = HttpInterfaceImpl()
     func transmit(url: String, headers: [String: String], data: Data?, completion: @escaping (Result<HttpInterface.HttpResponse,any Error>) -> Void ) {
         print("HTTP Request to: \(url)")
+        
+        if let data = data {
+            print("HTTP Body: \(String(buffer:ByteBuffer(data: data)))")
+        }
+
         var responseData = Data()
         var tlsConfiguration = TLSConfiguration.makeClientConfiguration()
         tlsConfiguration.certificateVerification = .none
@@ -45,16 +51,16 @@ class NetworkHttpInterface: NSObject, HttpInterface {
 
             let body = response.body
             let collectedBytes = try await body.collect(upTo: 1024 * 1024 * 30)
+            print("Response Data: \(String(buffer: collectedBytes))")
             if let data = collectedBytes.getData(at: 0, length: collectedBytes.readableBytes) {
                 responseData = data
-                print("Response Data: \(responseData.hexString)")
             }
             completion(.success((data: responseData, statusCode: Int(response.status.code), success: (200...299).contains(response.status.code))))
         }
 
     }
 }
-extension NetworkHttpInterface: URLSessionDelegate {
+extension HttpInterfaceImpl: URLSessionDelegate {
     public func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         //Trust the certificate even if not valid
         guard let trust = challenge.protectionSpace.serverTrust else {
@@ -71,6 +77,21 @@ extension NetworkHttpInterface: URLSessionDelegate {
 extension Data {
     var hexString: String {
         return self.map { String(format: "%02x", $0) }.joined()
+    }
+}
+extension String {
+    var hexadecimal: Data? {
+        var data = Data(capacity: count / 2)
+        let regex = try! NSRegularExpression(pattern: "[0-9a-f]{1,2}", options: .caseInsensitive)
+        regex.enumerateMatches(in: self, range: NSRange(startIndex..., in: self)) { match, _, _ in
+            if let match = match {
+                let byteString = (self as NSString).substring(with: match.range)
+                if let num = UInt8(byteString, radix: 16) {
+                    data.append(num)
+                }
+            }
+        }
+        return data.isEmpty ? nil : data
     }
 }
 

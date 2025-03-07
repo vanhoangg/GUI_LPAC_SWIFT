@@ -7,7 +7,9 @@
 import CryptoKit
 
 /// Swift interface for APDU operations
+
 public protocol ApduInterface: AnyObject {
+    var port: UICCPort { get }
     /// Connect to the card
     /// - Returns: True if successful
     func connect(completion: @escaping (Bool) -> Void)
@@ -28,5 +30,7 @@ public protocol ApduInterface: AnyObject {
     /// - Parameter data: Data to transmit
     /// - Returns: Response data
     func transmit(data: Data, completion: ((Result<Data, Error>) -> Void)?)
+    
+    func selectedDevice(reader:String) throws
 }
 

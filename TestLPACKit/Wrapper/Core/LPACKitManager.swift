@@ -2,16 +2,22 @@ import Foundation
 
 /// Main class for interacting with the LPAC library
 ///
+///
+protocol LpacManagerDelegate :AnyObject {
+    func throwError(_ description:String)
+}
 public class LpacManager {
     // Context pointer
     private var context: lpac_context_t?
     // Callbacks for APDU operations
     private var apduCallbacks = lpac_apdu_interface_t()
     private var httpCallbacks = lpac_http_interface_t()
+    
+    weak var delegate:LpacManagerDelegate?
 
     // Store Swift implementation objects
-    private let apduInterface: ApduInterface
-    private let httpInterface: HttpInterface
+    let apduInterface: ApduInterface
+    let httpInterface: HttpInterface
     // Download progress callback wrapper
     private let downloadCallback: @convention(c) (lpac_download_state_t, UnsafeMutableRawPointer?) -> Void = { state, userData in
         guard let userData = userData else { return }
@@ -37,7 +43,7 @@ public class LpacManager {
             let manager = Unmanaged<LpacManager>.fromOpaque(userData).takeUnretainedValue()
             let semaphore = DispatchSemaphore(value: 0)
             var result: Int32 = -1
-
+            
             manager.apduInterface.connect { success in
                 result = success ? 0 : -1
                 semaphore.signal()
@@ -52,19 +58,19 @@ public class LpacManager {
             let manager = Unmanaged<LpacManager>.fromOpaque(userData).takeUnretainedValue()
             manager.apduInterface.disconnect()
         }
-
+        
         apduCallbacks.logical_channel_open = { aid, aidLen, userData in
             guard let userData = userData, let aid = aid else { return -1 }
             let manager = Unmanaged<LpacManager>.fromOpaque(userData).takeUnretainedValue()
             let aidData = Data(bytes: aid, count: Int(aidLen))
             let semaphore = DispatchSemaphore(value: 0)
             var result: Int32 = -1
-            manager.apduInterface.logicalChannelOpen(aid: aidData) { results in
+            manager.apduInterface.logicalChannelOpen(aid: aidData) {  results in
                 switch results {
                     case .success(let intData):
                         result = Int32(intData)
                     case .failure(let error):
-                        break
+                        manager.delegate?.throwError(error.localizedDescription)
                         // TODO: DVH - handle error
                 }
                 semaphore.signal()
@@ -140,7 +146,6 @@ public class LpacManager {
                 switch result {
                     case .success(let response):
                         // Set response code
-                        
                         print("response \(response.statusCode)")
                         if let rcode = rcode {
                             rcode.pointee = UInt32(response.statusCode)
@@ -159,7 +164,7 @@ public class LpacManager {
                             responseTrasnmit = 0
                         }
                     case .failure(let failure):
-                        print(failure.localizedDescription)
+                        manager.delegate?.throwError(failure.localizedDescription)
                 }
                 semaphore.signal()
             }
@@ -175,8 +180,13 @@ public class LpacManager {
     /// Initialize the LPAC library with the ISD-R AID
     /// - Parameter isdrAid: The ISD-R AID to use
     /// - Returns: LpacError code
-    public func initialize(isdrAid: Data) -> LpacError {
+    public func initialize(reader:String,isdrAid: Data) async throws -> LpacError {
         // Clean up any existing context
+        do {
+            try await self.selectPort(reader: reader)
+        } catch {
+            throw error
+        }
         cleanup()
 
         // Create a self reference that will be passed to callbacks
@@ -192,7 +202,7 @@ public class LpacManager {
         )
 
         guard context != nil else {
-            return .memory
+            throw SmartCardError.missingContext
         }
 
         // Initialize the library
@@ -208,7 +218,15 @@ public class LpacManager {
             context = nil
         }
     }
-
+    
+    public func selectPort(reader:String) async throws {
+        do {
+            try apduInterface.selectedDevice(reader: reader)
+        } catch {
+            throw SmartCardError.invalidReader
+        }
+    }
+    
     /// Get the EID (eUICC Identifier)
     /// - Returns: EID string or nil if an error occurred
     public func getEID() throws -> String {
@@ -283,12 +301,12 @@ public class LpacManager {
 // MARK: - Notification Handle
 extension LpacManager {
     // List notifications
-    public func listNotifications() -> [Notification]? {
+    public func listNotifications() async -> [Notification] {
         var notificationsPtr: UnsafeMutablePointer<lpac_notification_list_t>?
         let result = lpac_list_notifications(context, &notificationsPtr)
         
         guard result == LPAC_SUCCESS, let notifications = notificationsPtr?.pointee else {
-            return nil
+            return []
         }
         
         var notificationList = [Notification]()
@@ -363,8 +381,8 @@ extension LpacManager {
     ///   - iccid: ICCID of the profile to enable
     ///   - refresh: Whether to refresh the card after enabling
     /// - Returns: LpacError code
-    public func enableProfile(iccid: String, refresh: Bool = true) -> LpacError {
-        guard let ctx = context else { return .general }
+    public func enableProfile(iccid: String, refresh: Bool = true) throws -> LpacError {
+        guard let ctx = context else { throw SmartCardError.missingContext }
         
         let result = lpac_enable_profile(ctx, iccid, refresh)
         return LpacError(rawValue: Int(result.rawValue)) ?? .general
@@ -375,9 +393,9 @@ extension LpacManager {
     ///   - iccid: ICCID of the profile to disable
     ///   - refresh: Whether to refresh the card after disabling
     /// - Returns: LpacError code
-    public func disableProfile(iccid: String, refresh: Bool = true) -> LpacError {
-        guard let ctx = context else { return .general }
-        
+    public func disableProfile(iccid: String, refresh: Bool = true) throws -> LpacError {
+        guard let ctx = context else { throw SmartCardError.missingContext }
+
         let result = lpac_disable_profile(ctx, iccid, refresh)
         return LpacError(rawValue: Int(result.rawValue)) ?? .general
     }
@@ -385,9 +403,9 @@ extension LpacManager {
     /// Delete a profile
     /// - Parameter iccid: ICCID of the profile to delete
     /// - Returns: LpacError code
-    public func deleteProfile(iccid: String) -> LpacError {
-        guard let ctx = context else { return .general }
-        
+    public func deleteProfile(iccid: String) throws -> LpacError {
+        guard let ctx = context else { throw SmartCardError.missingContext }
+
         let result = lpac_delete_profile(ctx, iccid)
         return LpacError(rawValue: Int(result.rawValue)) ?? .general
     }
@@ -397,9 +415,9 @@ extension LpacManager {
     ///   - iccid: ICCID of the profile
     ///   - nickname: New nickname
     /// - Returns: LpacError code
-    public func setNickname(iccid: String, nickname: String) -> LpacError {
-        guard let ctx = context else { return .general }
-        
+    public func setNickname(iccid: String, nickname: String) throws -> LpacError {
+        guard let ctx = context else { throw SmartCardError.missingContext }
+
         let result = lpac_set_nickname(ctx, iccid, nickname)
         return LpacError(rawValue: Int(result.rawValue)) ?? .general
     }
@@ -418,9 +436,9 @@ extension LpacManager {
         imei: String? = nil,
         confirmationCode: String? = nil,
         progressHandler: ((LpacDownloadState) -> Void)? = nil
-    ) -> LpacError {
-        guard let ctx = context else { return .general }
-        
+    ) throws -> LpacError {
+        guard let ctx = context else { throw SmartCardError.missingContext }
+
         // Save the Swift callback
         self.downloadCallbackHolder = progressHandler
         

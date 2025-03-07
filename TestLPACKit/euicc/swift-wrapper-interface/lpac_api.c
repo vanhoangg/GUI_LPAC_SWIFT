@@ -121,6 +121,7 @@ lpac_context_t lpac_create_context(const uint8_t *isdr_aid, uint32_t isdr_len,
 
     // Copy AID
     ctx->aid = malloc(isdr_len);
+
     if (!ctx->aid)
     {
         free(ctx);
@@ -133,6 +134,7 @@ lpac_context_t lpac_create_context(const uint8_t *isdr_aid, uint32_t isdr_len,
     if (apdu_interface)
     {
         memcpy(&ctx->apdu_interface, apdu_interface, sizeof(lpac_apdu_interface_t));
+
     }
 
     if (http_interface)
@@ -141,6 +143,7 @@ lpac_context_t lpac_create_context(const uint8_t *isdr_aid, uint32_t isdr_len,
     }
 
     ctx->user_data = user_data;
+
 
     // Set up euicc context
     ctx->euicc_ctx.apdu.interface = &euicc_apdu_interface;
@@ -169,7 +172,7 @@ lpac_error_t lpac_init(lpac_context_t ctx)
     }
 
     int ret = euicc_init(&ctx->euicc_ctx);
-    return ret == 0 ? LPAC_SUCCESS : LPAC_ERROR_GENERAL;
+    return ret == 0 ? LPAC_SUCCESS : ret;
 }
 
 void lpac_fini(lpac_context_t ctx)
@@ -656,17 +659,28 @@ void lpac_free_notification_list(lpac_notification_list_t *notifications)
     free(notifications);
 }
 
-lpac_error_t lpac_handle_notification(lpac_context_t ctx, uint64_t seq_number)
+int lpac_handle_notification(lpac_context_t ctx, uint64_t  seq_number)
 {
     if (!ctx)
     {
         return LPAC_ERROR_INVALID_PARAMETER;
     }
+    int res;
 
-    int ret = es9p_handle_notification(&ctx->euicc_ctx, seq_number);
-    if (ret < 0)
+    struct es10b_pending_notification notification;
+
+    
+    res = es10b_retrieve_notifications_list(&ctx->euicc_ctx, &notification, (unsigned long) seq_number);
+    if (res < 0)
     {
-        return LPAC_ERROR_GENERAL;
+        return res;
+    }
+    ctx->euicc_ctx.http.server_address = notification.notificationAddress;
+
+    res = es9p_handle_notification(&ctx->euicc_ctx, notification.b64_PendingNotification);
+    if (res < 0)
+    {
+        return res;
     }
 
     return LPAC_SUCCESS;
