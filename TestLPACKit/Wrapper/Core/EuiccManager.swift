@@ -13,28 +13,46 @@ import CryptoTokenKit
 
 protocol EuiccDelegate: AnyObject {
     func throwError(_ decription:String)
+    func downloadCallbackHolder(_ state: LpacDownloadState)
+}
+extension EuiccDelegate {
+    func downloadCallbackHolder(_ state: LpacDownloadState) {}
 }
 class EuiccManager {
     weak var delegate: EuiccDelegate?
-    
     static let shared = EuiccManager()
-    
     private let lpacManager: LpacManager
-    private var listNotification: [Notification] = []
+    private let watcher: TKTokenWatcher = TKTokenWatcher()
+    private var listNotification: [Notification] {
+        get {
+            return lpacManager.listNotifications().sorted(by: { $0.seqNumber > $1.seqNumber })
+        }
+    }
     private let isdrAid = Data([0xA0, 0x00, 0x00, 0x05, 0x59, 0x10, 0x10, 0xFF, 0xFF, 0xFF, 0xFF, 0x89, 0x00, 0x00, 0x01, 0x00])
 
     init(apduInterface: ApduInterface? = nil , httpInterface: HttpInterface? = nil)  {
         // Create LPAC manager
-        lpacManager = LpacManager(apduInterface: apduInterface ?? SmartCardApduInterface.shared, httpInterface: httpInterface ?? HttpInterfaceImpl.shared)
+     
+        lpacManager = LpacManager(apduInterface: apduInterface ?? SmartCardApduInterface(), httpInterface: httpInterface ?? HttpInterfaceImpl())
         lpacManager.delegate = self
+        
     }
     
     deinit {
         lpacManager.cleanup()
     }
+    private func handleState(_ state: TKSmartCardSlot.State) {
+        
+    }
+    func retryConnect() async throws {
+        do {
+            try await createContext()
+        } catch {
+            throw error
+        }
+    }
     
-    
-    func createContext() async throws -> Bool {
+    func createContext() async throws {
         // ISD-R AID for eUICC (example)
         // Initialize
         guard let smartCardName = TKSmartCardSlotManager.default?.slotNames.first else {
@@ -47,7 +65,6 @@ class EuiccManager {
             if result != .success {
                 throw SmartCardError.initError("Failed to initialize LPAC library: \(result)")
             }
-            return result == .success
         } catch {
             throw error
         }
@@ -83,10 +100,6 @@ class EuiccManager {
         }
     }
     
-    func getListNotification() async -> [Notification] {
-        self.listNotification = await lpacManager.listNotifications()
-        return self.listNotification
-    }
     
     func deleteProfile(iccid: String) async throws -> Bool {
      
@@ -122,9 +135,7 @@ class EuiccManager {
     }
     
     func downloadProfile(
-        activationCode: String,
-        progressHandler: @escaping (LpacDownloadState) -> Void,
-        completionHandler: @escaping () -> Void
+        activationCode: String
     ) throws {
         // Parse activation code (format: LPA:1$smdp.example.com$matching-id)
         let components = activationCode.replacingOccurrences(of: "LPA:", with: "").split(separator: "$")
@@ -135,34 +146,23 @@ class EuiccManager {
         let smdp = String(components[1])
         let matchingId = String(components[2])
         
-        var complete = false
         // Download profile with progress updates
 
         do {
-            let result = try lpacManager.downloadProfile(
+            try lpacManager.downloadProfile(
                 smdp: smdp,
-                matchingId: matchingId,
-                progressHandler: { state in
-                    progressHandler(state)
-                    complete = state == .finalizing
-                }
+                matchingId: matchingId
             )
-            if result != .success || !complete {
-                throw SmartCardError.initError("Failed to start download: \(result)")
-            }
-            completionHandler()
-
         } catch {
             throw error
         }
     }
     
     func beginTrackedOperation() async  {
-        let notifications = await self.getListNotification()
-        let latestSeq = notifications.first?.seqNumber ?? 0
+        let latestSeq = self.listNotification.first?.seqNumber ?? 0
         print("Latest notification is \(latestSeq) before operation")
         print("Operation has requested notification handling")
-        for notification in notifications where notification.seqNumber > latestSeq {
+        for notification in self.listNotification where notification.seqNumber > latestSeq {
             print("Handling notification \(notification)")
             self.handleNotification(seqNumber: notification.seqNumber)
         }
@@ -170,9 +170,12 @@ class EuiccManager {
     
 }
 extension EuiccManager: LpacManagerDelegate {
+    func downloadCallbackHolder(_ state: LpacDownloadState) {
+        self.delegate?.downloadCallbackHolder(state)
+    }
+    
     func throwError(_ description: String) {
         self.delegate?.throwError(description)
-
     }
 
 }

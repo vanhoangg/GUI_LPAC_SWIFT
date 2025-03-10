@@ -5,36 +5,19 @@ struct ActivationCode {
     let code: String
     var status: Bool
 }
-class EuiccViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate, EuiccDelegate {
-    func throwError(_ decription: String) {
-        showAlert(title: "Error", message: decription)
-    }
-    
-    
+class EuiccViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate  {
     // MARK: - UI Components
     
     private let tableView = UITableView()
     private let activityIndicator = UIActivityIndicatorView(style: .large)
     private let responseTextView = UITextView()
     // MARK: - Properties
-    private var profiles: [ProfileInfo] = [
-        ProfileInfo(iccid: "1234567890",
-                    name: "Test Profile 1",
-                    provider: "Provider 1",
-                    nickname: "Profile 1",
-                    isdpAid: "TEST 1",
-                    state: .enabled,
-                    profileClass: .test),
-        ProfileInfo(iccid: "0987654321",
-                    name: "Test Profile 2",
-                    provider: "Provider 2",
-                    nickname: "Profile 2",
-                    isdpAid: "TEST 2",
-                    state: .disabled,
-                    profileClass: .test)
-    ]
+    private var profiles: [ProfileInfo] = []
     
-    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+ 
+    }
     // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -62,9 +45,9 @@ class EuiccViewController: UIViewController, AVCaptureMetadataOutputObjectsDeleg
         navigationItem.rightBarButtonItems = [addBarButton, refreshBarButton]
         
         // Configure EID label
-        responseTextView.font = UIFont.systemFont(ofSize: 12)
+        responseTextView.font = UIFont.systemFont(ofSize: 14)
         responseTextView.textColor = .secondaryLabel
-        responseTextView.textAlignment = .center
+        responseTextView.textAlignment = .left
         // Configure table view
         tableView.register(ProfileCell.self, forCellReuseIdentifier: "ProfileCell")
         tableView.delegate = self
@@ -91,7 +74,7 @@ class EuiccViewController: UIViewController, AVCaptureMetadataOutputObjectsDeleg
             responseTextView.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
             responseTextView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             responseTextView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            responseTextView.heightAnchor.constraint(equalToConstant: 200),
+            responseTextView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.5),
             tableView.topAnchor.constraint(equalTo: responseTextView.bottomAnchor, constant: 8),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -109,15 +92,15 @@ class EuiccViewController: UIViewController, AVCaptureMetadataOutputObjectsDeleg
             do {
                 
                 // Attempt to get EID
-                let response = try await EuiccManager.shared.createContext()
-                if response {
-                    let eid = try EuiccManager.shared.getEID()
-                    responseTextView.text += "EID: \(String(describing: eid))"
-                    let eidInfo = try EuiccManager.shared.getCardInfo()
-                    eidInfo.toJsonString().components(separatedBy: ",").forEach( {
-                        responseTextView.text += $0 + "\n"
-                    })
-                }
+                try await EuiccManager.shared.createContext()
+                let eid = try EuiccManager.shared.getEID()
+                responseTextView.text += "EID: \(String(describing: eid))\n"
+                let eidInfo = try EuiccManager.shared.getCardInfo()
+                eidInfo.toJsonString().components(separatedBy: ",").forEach( {
+                    responseTextView.text += $0 + "\n"
+                })
+                refreshProfiles()
+           
 
                 
             } catch {
@@ -129,6 +112,7 @@ class EuiccViewController: UIViewController, AVCaptureMetadataOutputObjectsDeleg
     // MARK: - Actions
     @objc private func navigateToNewScreen() {
         let newScreenVC = ImportProfileViewController()
+        newScreenVC.delegate = self
         navigationController?.pushViewController(newScreenVC, animated: true)
     }
     
@@ -138,8 +122,23 @@ class EuiccViewController: UIViewController, AVCaptureMetadataOutputObjectsDeleg
     
 }
 
+// MARK: - Delegate
+extension EuiccViewController: ImportProfileDelegate, EuiccDelegate {
+    func downloadCallbackHolder(_ state: LpacDownloadState) {
+        
+    }
+    
+    
+    func reloadProfile() {
+        refreshProfiles()
+    }
+    func throwError(_ decription: String) {
+        showAlert(title: "Error", message: decription)
+    }
+}
 // MARK: - Profile Management
 extension EuiccViewController {
+   
     
     @objc private func refreshProfiles() {
         activityIndicator.startAnimating()
@@ -155,7 +154,7 @@ extension EuiccViewController {
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self.activityIndicator.stopAnimating()
+                    self.profiles = []
                     self.showAlert(title: "Error", message: "Failed to retrieve profiles \(error.localizedDescription)")
                 }
             }
@@ -331,7 +330,7 @@ extension EuiccViewController: UITableViewDelegate, UITableViewDataSource {
     }
     
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        return 80
+        return UITableView.automaticDimension
     }
 }
 
@@ -340,6 +339,16 @@ class ProfileCell: UITableViewCell {
     private let nameLabel = UILabel()
     private let providerLabel = UILabel()
     private let iccidLabel = UILabel()
+    private let nickNameLabel = UILabel()
+    private let aidLabel = UILabel()
+    private let classLabel = UILabel()
+    private lazy var stackViewLabel: UIStackView = {
+        let stackView = UIStackView(arrangedSubviews: [nameLabel,providerLabel,iccidLabel,nickNameLabel,aidLabel,classLabel])
+        stackView.axis = .vertical
+        stackView.spacing = 10
+        stackView.distribution = .equalSpacing
+        return stackView
+    } ()
     private let statusIndicator = UIView()
     
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -354,35 +363,25 @@ class ProfileCell: UITableViewCell {
     private func setupUI() {
         nameLabel.font = UIFont.boldSystemFont(ofSize: 16)
         providerLabel.font = UIFont.systemFont(ofSize: 14)
-        iccidLabel.font = UIFont.systemFont(ofSize: 12)
-        iccidLabel.textColor = .secondaryLabel
+        iccidLabel.font = UIFont.systemFont(ofSize: 14)
+        nameLabel.font = UIFont.systemFont(ofSize: 14)
+        providerLabel.font = UIFont.systemFont(ofSize: 14)
+        iccidLabel.font = UIFont.systemFont(ofSize: 14)
         
         statusIndicator.layer.cornerRadius = 6
         statusIndicator.clipsToBounds = true
         
-        contentView.addSubview(nameLabel)
-        contentView.addSubview(providerLabel)
-        contentView.addSubview(iccidLabel)
+        contentView.addSubview(stackViewLabel)
         contentView.addSubview(statusIndicator)
         
-        nameLabel.translatesAutoresizingMaskIntoConstraints = false
-        providerLabel.translatesAutoresizingMaskIntoConstraints = false
-        iccidLabel.translatesAutoresizingMaskIntoConstraints = false
+        stackViewLabel.translatesAutoresizingMaskIntoConstraints = false
         statusIndicator.translatesAutoresizingMaskIntoConstraints = false
         
         NSLayoutConstraint.activate([
-            nameLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
-            nameLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            nameLabel.trailingAnchor.constraint(equalTo: statusIndicator.leadingAnchor, constant: -16),
-            
-            providerLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 4),
-            providerLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            providerLabel.trailingAnchor.constraint(equalTo: statusIndicator.leadingAnchor, constant: -16),
-            
-            iccidLabel.topAnchor.constraint(equalTo: providerLabel.bottomAnchor, constant: 4),
-            iccidLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            iccidLabel.trailingAnchor.constraint(equalTo: statusIndicator.leadingAnchor, constant: -16),
-            iccidLabel.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -10),
+            stackViewLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
+            stackViewLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            stackViewLabel.trailingAnchor.constraint(equalTo: statusIndicator.leadingAnchor, constant: -16),
+            stackViewLabel.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -10),
             
             statusIndicator.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             statusIndicator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
@@ -392,9 +391,21 @@ class ProfileCell: UITableViewCell {
     }
     
     func configure(with profile: ProfileInfo) {
-        nameLabel.text = profile.nickname ?? profile.name ?? "Unknown"
+        nameLabel.text = profile.name ?? "Unknown"
         providerLabel.text = profile.provider ?? "Unknown Provider"
         iccidLabel.text = profile.iccid ?? "Unknown ICCID"
+        nickNameLabel.text = profile.nickname
+        aidLabel.text = profile.isdpAid ?? ""
+        switch profile.profileClass?.rawValue ?? 0 {
+            case 1:
+                classLabel.text = "Test Class"
+            case 2:
+                classLabel.text = "Provisioning Class"
+            case 3:
+                classLabel.text = "Operational Class"
+            default:
+                classLabel.text = "Unknown Class"
+        }
         
         // Set status indicator color
         statusIndicator.backgroundColor = profile.state == .enabled ? .systemGreen : .systemGray

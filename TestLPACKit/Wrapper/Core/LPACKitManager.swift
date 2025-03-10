@@ -5,6 +5,7 @@ import Foundation
 ///
 protocol LpacManagerDelegate :AnyObject {
     func throwError(_ description:String)
+    func downloadCallbackHolder(_ state:LpacDownloadState)
 }
 public class LpacManager {
     // Context pointer
@@ -23,12 +24,9 @@ public class LpacManager {
         guard let userData = userData else { return }
         let manager = Unmanaged<LpacManager>.fromOpaque(userData).takeUnretainedValue()
         let swiftState = LpacDownloadState(rawValue: Int(state.rawValue)) ?? .preparing
-        manager.downloadCallbackHolder?(swiftState)
+        manager.delegate?.downloadCallbackHolder(swiftState)
     }
     
-    // Retain callback references
-    private var downloadCallbackHolder: ((LpacDownloadState) -> Void)?
-
     /// Creates a new LPAC manager with the specified interfaces
     /// - Parameters:
     ///   - apduInterface: Interface for APDU operations
@@ -143,28 +141,27 @@ public class LpacManager {
             let semaphore = DispatchSemaphore(value: 0)
 
             manager.httpInterface.transmit(url: urlString, headers: headerDict, data: txData) { result in
-                switch result {
-                    case .success(let response):
-                        // Set response code
-                        print("response \(response.statusCode)")
-                        if let rcode = rcode {
-                            rcode.pointee = UInt32(response.statusCode)
-                        }
-                        
-                        print("response.data \(response.data)")
-                        
-
-                        // Set response data
-                        if let rx = rx, let rxLen = rxLen, !response.data.isEmpty {
-                            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: response.data.count)
-                            response.data.copyBytes(to: buffer, count: response.data.count)
-                            print("buffer \(buffer)")
-                            rx.pointee = buffer
-                            rxLen.pointee = UInt32(response.data.count)
-                            responseTrasnmit = 0
-                        }
-                    case .failure(let failure):
-                        manager.delegate?.throwError(failure.localizedDescription)
+                if (result.success) {
+                    print("response \(result.statusCode)")
+                    if let rcode = rcode {
+                        rcode.pointee = UInt32(result.statusCode)
+                    }
+                    
+                    print("result.data \(result.data)")
+                    
+                    
+                    // Set result data
+                    if let rx = rx, let rxLen = rxLen, !result.data.isEmpty {
+                        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: result.data.count)
+                        result.data.copyBytes(to: buffer, count: result.data.count)
+                        print("buffer \(buffer)")
+                        rx.pointee = buffer
+                        rxLen.pointee = UInt32(result.data.count)
+                        responseTrasnmit = 0
+                    }
+                } else {
+                    let stringResponse = result.data.hexString
+                    manager.delegate?.throwError(stringResponse)
                 }
                 semaphore.signal()
             }
@@ -301,7 +298,7 @@ public class LpacManager {
 // MARK: - Notification Handle
 extension LpacManager {
     // List notifications
-    public func listNotifications() async -> [Notification] {
+    public func listNotifications() -> [Notification] {
         var notificationsPtr: UnsafeMutablePointer<lpac_notification_list_t>?
         let result = lpac_list_notifications(context, &notificationsPtr)
         
@@ -434,29 +431,25 @@ extension LpacManager {
         smdp: String,
         matchingId: String?,
         imei: String? = nil,
-        confirmationCode: String? = nil,
-        progressHandler: ((LpacDownloadState) -> Void)? = nil
-    ) throws -> LpacError {
+        confirmationCode: String? = nil
+    ) throws {
         guard let ctx = context else { throw SmartCardError.missingContext }
 
-        // Save the Swift callback
-        self.downloadCallbackHolder = progressHandler
+
         
         // Get a self reference for the callback
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         
         // Call the C function
-        let result = lpac_download_profile(
+        lpac_download_profile(
             ctx,
             smdp,
             matchingId,
             imei,
             confirmationCode,
-            progressHandler != nil ? downloadCallback : nil,
+            downloadCallback,
             selfPtr
         )
-        
-        return LpacError(rawValue: Int(result.rawValue)) ?? .general
     }
 }
 

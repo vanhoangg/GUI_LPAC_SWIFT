@@ -18,12 +18,11 @@ public protocol HttpInterface {
     ///   - headers: HTTP headers
     ///   - data: Data to transmit (or nil for GET)
     /// - Returns: HTTP response
-    func transmit(url: String, headers: [String: String], data: Data?,completion: @escaping (Result<HttpInterface.HttpResponse,any Error>) -> Void )
+    func transmit(url: String, headers: [String: String], data: Data?,completion: @escaping (HttpInterface.HttpResponse) -> Void )
 }
 
 class HttpInterfaceImpl: NSObject, HttpInterface {
-    static let shared = HttpInterfaceImpl()
-    func transmit(url: String, headers: [String: String], data: Data?, completion: @escaping (Result<HttpInterface.HttpResponse,any Error>) -> Void ) {
+    func transmit(url: String, headers: [String: String], data: Data?, completion: @escaping (HttpInterface.HttpResponse) -> Void ) {
         print("HTTP Request to: \(url)")
         
         if let data = data {
@@ -55,7 +54,12 @@ class HttpInterfaceImpl: NSObject, HttpInterface {
             if let data = collectedBytes.getData(at: 0, length: collectedBytes.readableBytes) {
                 responseData = data
             }
-            completion(.success((data: responseData, statusCode: Int(response.status.code), success: (200...299).contains(response.status.code))))
+            if (200...299).contains(response.status.code) {
+                completion((data: responseData, statusCode: Int(response.status.code), success: true))
+            } else {
+                completion((data: responseData, statusCode: Int(response.status.code), success: false))
+
+            }
         }
 
     }

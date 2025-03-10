@@ -13,6 +13,8 @@ protocol ImportProfileDelegate :AnyObject {
     func reloadProfile()
 }
 class ImportProfileViewController: UIViewController {
+   
+    
     // MARK: - Properties
 
     private var downloadState: LpacDownloadState?
@@ -44,7 +46,6 @@ class ImportProfileViewController: UIViewController {
         inputStackView.distribution = .equalSpacing
         return inputStackView
     } ()
-
     
     // MARK: - Open properties
     weak var delegate:ImportProfileDelegate?
@@ -54,13 +55,18 @@ class ImportProfileViewController: UIViewController {
         super.viewWillDisappear(animated)
         
         if (captureSession?.isRunning == true) {
-            captureSession?.stopRunning()
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.captureSession?.stopRunning()
+            }
         }
     }
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         if (captureSession?.isRunning == false) {
-            captureSession?.startRunning()
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.captureSession?.startRunning()
+            }
+        
         }
     }
     
@@ -68,6 +74,7 @@ class ImportProfileViewController: UIViewController {
         super.viewDidLoad()
         setUpCamera()
         setupUI()
+        EuiccManager.shared.delegate = self
         
     }
     
@@ -178,28 +185,48 @@ class ImportProfileViewController: UIViewController {
     
 }
 
-
+extension ImportProfileViewController: EuiccDelegate {
+    func throwError(_ decription: String) {
+        DispatchQueue.main.async { [weak self] in
+            self?.showAlert(title: "Error", message: decription)
+        }
+    }
+    
+    func downloadCallbackHolder(_ state: LpacDownloadState) {
+        DispatchQueue.main.async { [weak self] in
+            self?.updateDownloadProgress(state: state)
+            if (state == .finalizing) {
+                self?.downloadProgressLabel.isHidden = true
+                self?.downloadProgressView.isHidden = true
+                self?.activationCodeTextField.text = ""
+                self?.smdpAddressTextField.text = ""
+                self?.showAlert(title: "Success", message: "Profile downloaded successfully") {
+                    self?.navigationController?.popViewController(animated: true)
+                    self?.delegate?.reloadProfile()
+                }
+            }
+        }
+    }
+}
 // MARK: - Profile Manager
 extension ImportProfileViewController {
     
     @objc private func downloadProfile() {
+
         
-        guard let index = mockActivationCode.firstIndex(where: { $0.status == false }), !mockActivationCode[index].code.isEmpty else {
+        guard let SMDPAddress = smdpAddressTextField.text
+            else {
+            showAlert(title: "Error", message: "Please enter an SMDPAddress code")
+            return
+        }
+        guard let activationCode = activationCodeTextField.text
+        else {
             showAlert(title: "Error", message: "Please enter an activation code")
             return
         }
-        let activationCode = mockActivationCode[index].code
-        
         // Parse activation code (format: LPA:1$smdp.example.com$matching-id)
-        let components = activationCode.replacingOccurrences(of: "LPA:", with: "").split(separator: "$")
-        if components.count < 3 {
-            showAlert(title: "Error", message: "Invalid activation code format")
-            return
-        }
-        
-        let smdp = String(components[1])
-        let matchingId = String(components[2])
-        
+
+        let qrCode = "LPA:1$\(SMDPAddress)$\(activationCode)"
         // Show progress UI
         downloadProgressLabel.isHidden = false
         downloadProgressView.isHidden = false
@@ -209,26 +236,7 @@ extension ImportProfileViewController {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
-                try EuiccManager.shared.downloadProfile(
-                    activationCode: activationCode,
-                    progressHandler: { [weak self] state in
-                        DispatchQueue.main.async {
-                            self?.updateDownloadProgress(state: state)
-                        }
-                    },
-                    completionHandler: { [weak self] in
-                        self?.delegate?.reloadProfile()
-                        self?.mockActivationCode[index].status = true
-
-                        DispatchQueue.main.async {
-                            self?.downloadProgressLabel.isHidden = true
-                            self?.downloadProgressView.isHidden = true
-                            self?.activationCodeTextField.text = ""
-                            self?.smdpAddressTextField.text = ""
-                            self?.showAlert(title: "Success", message: "Profile downloaded successfully")
-                        }
-                    }
-                )
+                try EuiccManager.shared.downloadProfile(activationCode: qrCode)
             } catch {
                 DispatchQueue.main.async {
                     self.showAlert(title: "Error", message: error.localizedDescription)
@@ -265,8 +273,8 @@ extension ImportProfileViewController {
         }
         
         downloadProgressLabel.text = stateText
-        UIView.animate(withDuration: 0.3) {
-            self.downloadProgressView.setProgress(progress, animated: true)
+        UIView.animate(withDuration: 0.3) { [weak self] in
+            self?.downloadProgressView.setProgress(progress, animated: true)
         }
     }
     
@@ -324,7 +332,18 @@ extension ImportProfileViewController: AVCaptureMetadataOutputObjectsDelegate {
     
     func found(code: String) {
         print(code)
-        activationCodeTextField.text = code
+        
+        // Parse activation code (format: LPA:1$smdp.example.com$matching-id)
+        let components = code.replacingOccurrences(of: "LPA:", with: "").split(separator: "$")
+        if components.count < 3 {
+            showAlert(title: "Error", message: "Invalid activation code format")
+            return
+        }
+        
+        let smdp = String(components[1])
+        let matchingId = String(components[2])
+        smdpAddressTextField.text = smdp
+        activationCodeTextField.text = matchingId
     }
     
     override var prefersStatusBarHidden: Bool {
