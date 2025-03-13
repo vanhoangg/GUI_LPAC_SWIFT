@@ -16,7 +16,7 @@ class EuiccViewController: UIViewController, AVCaptureMetadataOutputObjectsDeleg
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
- 
+        
     }
     // MARK: - Lifecycle
     override func viewDidLoad() {
@@ -124,6 +124,10 @@ class EuiccViewController: UIViewController, AVCaptureMetadataOutputObjectsDeleg
 
 // MARK: - Delegate
 extension EuiccViewController: ImportProfileDelegate, EuiccDelegate {
+    func downloadFinish() {
+        
+    }
+    
     func downloadCallbackHolder(_ state: LpacDownloadState) {
         
     }

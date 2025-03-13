@@ -195,17 +195,20 @@ extension ImportProfileViewController: EuiccDelegate {
     func downloadCallbackHolder(_ state: LpacDownloadState) {
         DispatchQueue.main.async { [weak self] in
             self?.updateDownloadProgress(state: state)
-            if (state == .finalizing) {
-                self?.downloadProgressLabel.isHidden = true
-                self?.downloadProgressView.isHidden = true
-                self?.activationCodeTextField.text = ""
-                self?.smdpAddressTextField.text = ""
-                self?.showAlert(title: "Success", message: "Profile downloaded successfully") {
-                    self?.navigationController?.popViewController(animated: true)
-                    self?.delegate?.reloadProfile()
-                }
+        }
+    }
+    func downloadFinish() {
+        DispatchQueue.main.async { [weak self] in
+            self?.downloadProgressLabel.isHidden = true
+            self?.downloadProgressView.isHidden = true
+            self?.activationCodeTextField.text = ""
+            self?.smdpAddressTextField.text = ""
+            self?.showAlert(title: "Success", message: "Profile downloaded successfully") {
+                self?.navigationController?.popViewController(animated: true)
+                self?.delegate?.reloadProfile()
             }
         }
+      
     }
 }
 // MARK: - Profile Manager

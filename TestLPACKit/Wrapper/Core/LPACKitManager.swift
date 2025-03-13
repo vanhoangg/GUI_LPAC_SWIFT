@@ -432,7 +432,7 @@ extension LpacManager {
         matchingId: String?,
         imei: String? = nil,
         confirmationCode: String? = nil
-    ) throws {
+    ) throws -> LpacError  {
         guard let ctx = context else { throw SmartCardError.missingContext }
 
 
@@ -441,7 +441,7 @@ extension LpacManager {
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         
         // Call the C function
-        lpac_download_profile(
+        let result = lpac_download_profile(
             ctx,
             smdp,
             matchingId,
@@ -450,6 +450,8 @@ extension LpacManager {
             downloadCallback,
             selfPtr
         )
+        return LpacError(rawValue: Int(result.rawValue)) ?? .general
+
     }
 }
 

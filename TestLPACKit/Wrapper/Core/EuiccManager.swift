@@ -14,6 +14,8 @@ import CryptoTokenKit
 protocol EuiccDelegate: AnyObject {
     func throwError(_ decription:String)
     func downloadCallbackHolder(_ state: LpacDownloadState)
+    func downloadFinish()
+
 }
 extension EuiccDelegate {
     func downloadCallbackHolder(_ state: LpacDownloadState) {}
@@ -29,7 +31,9 @@ class EuiccManager {
         }
     }
     private let isdrAid = Data([0xA0, 0x00, 0x00, 0x05, 0x59, 0x10, 0x10, 0xFF, 0xFF, 0xFF, 0xFF, 0x89, 0x00, 0x00, 0x01, 0x00])
-
+    var state: LpacDownloadState?
+    var downloadResult: LpacError?
+    var complete:Bool = false
     init(apduInterface: ApduInterface? = nil , httpInterface: HttpInterface? = nil)  {
         // Create LPAC manager
      
@@ -76,7 +80,6 @@ class EuiccManager {
         } catch {
             throw error
         }
-        
     }
     
     func getCardInfo() throws -> Es10cExEuiccInfo2 {
@@ -147,12 +150,16 @@ class EuiccManager {
         let matchingId = String(components[2])
         
         // Download profile with progress updates
-
+        complete = false
         do {
-            try lpacManager.downloadProfile(
+            let result = try lpacManager.downloadProfile(
                 smdp: smdp,
                 matchingId: matchingId
             )
+            self.downloadResult = result
+            if let state, state == .finalizing && result == .success {
+                self.delegate?.downloadFinish()
+            }
         } catch {
             throw error
         }
@@ -171,7 +178,13 @@ class EuiccManager {
 }
 extension EuiccManager: LpacManagerDelegate {
     func downloadCallbackHolder(_ state: LpacDownloadState) {
-        self.delegate?.downloadCallbackHolder(state)
+        self.state = state
+        if state == .finalizing && self.downloadResult == .success {
+            self.delegate?.downloadFinish()
+        } else {
+            self.delegate?.downloadCallbackHolder(state)
+        }
+        
     }
     
     func throwError(_ description: String) {
