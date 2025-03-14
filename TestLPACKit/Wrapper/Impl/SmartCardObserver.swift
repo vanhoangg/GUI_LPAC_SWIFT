@@ -7,13 +7,12 @@
 import Foundation
 import CryptoTokenKit
 
-
 public class SmartCardObserver: NSObject {
     var card: TKSmartCard?
     var slot: TKSmartCardSlot?
     var channel: [Int] = []
     var onStateChanged: ((TKSmartCardSlot.State) -> Void)?
-    
+
     init(onStateChanged: ((TKSmartCardSlot.State) -> Void)? = nil) {
         self.onStateChanged = onStateChanged
         super.init()
@@ -23,7 +22,7 @@ public class SmartCardObserver: NSObject {
             print("⚠️ No smart card slot available.")
             return
         }
-        
+
         guard let card = slot.makeSmartCard() else {
             print("⚠️ No smart card available.")
             return
@@ -34,13 +33,13 @@ public class SmartCardObserver: NSObject {
         // Notify current state initially
         onStateChanged?(slot.state)
     }
-    
+
     public override func observeValue(forKeyPath keyPath: String?, of object: Any?,
-                                      change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+                                      change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
         guard keyPath == "state", let slot = object as? TKSmartCardSlot else { return }
         onStateChanged?(slot.state)
     }
-    
+
     deinit {
         slot?.removeObserver(self, forKeyPath: "state")
     }

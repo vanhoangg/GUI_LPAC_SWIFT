@@ -11,22 +11,22 @@ import NIOSSL
 public protocol HttpInterface {
     /// HTTP response structure
     typealias HttpResponse = (data: Data, statusCode: Int, success: Bool)
-    
+
     /// Transmit data via HTTP
     /// - Parameters:
     ///   - url: URL to connect to
     ///   - headers: HTTP headers
     ///   - data: Data to transmit (or nil for GET)
     /// - Returns: HTTP response
-    func transmit(url: String, headers: [String: String], data: Data?,completion: @escaping (HttpInterface.HttpResponse) -> Void )
+    func transmit(url: String, headers: [String: String], data: Data?, completion: @escaping (HttpInterface.HttpResponse) -> Void )
 }
 
 class HttpInterfaceImpl: NSObject, HttpInterface {
     func transmit(url: String, headers: [String: String], data: Data?, completion: @escaping (HttpInterface.HttpResponse) -> Void ) {
         print("HTTP Request to: \(url)")
-        
+
         if let data = data {
-            print("HTTP Body: \(String(buffer:ByteBuffer(data: data)))")
+            print("HTTP Body: \(String(buffer: ByteBuffer(data: data)))")
         }
 
         var responseData = Data()
@@ -44,7 +44,7 @@ class HttpInterfaceImpl: NSObject, HttpInterface {
             request.headers.add(name: "Content-Type", value: "application/json")
             request.headers.add(name: "X-Admin-Protocol", value: "gsma/rsp/v2.2.0")
             request.headers.add(name: "Accept", value: "application/json")
-            
+
         Task {
             let response = try await HTTPClient.shared.execute(request, timeout: .seconds(30))
 
@@ -66,7 +66,7 @@ class HttpInterfaceImpl: NSObject, HttpInterface {
 }
 extension HttpInterfaceImpl: URLSessionDelegate {
     public func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        //Trust the certificate even if not valid
+        // Trust the certificate even if not valid
         guard let trust = challenge.protectionSpace.serverTrust else {
             print("Not trust: \(challenge.protectionSpace)")
             return
@@ -98,7 +98,6 @@ extension String {
         return data.isEmpty ? nil : data
     }
 }
-
 
 struct HttpResponse {
     let statusCode: Int

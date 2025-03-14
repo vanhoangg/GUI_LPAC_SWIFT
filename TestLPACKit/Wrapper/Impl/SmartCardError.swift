@@ -17,8 +17,8 @@ struct SmartCardError {
     static let missingCard = NSError(domain: "SmartCardError", code: -1, userInfo: [NSLocalizedDescriptionKey: "No card found in reader"])
     static let initializeLPACFailed = NSError(domain: "SmartCardError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to initialize LPAC library"])
     static let unknownError = NSError(domain: "SmartCardError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknow"])
-    
-    static func initError(_ description:String) -> NSError {
+
+    static func initError(_ description: String) -> NSError {
         return NSError(domain: "SmartCardError", code: -1, userInfo: [NSLocalizedDescriptionKey: description])
     }
 

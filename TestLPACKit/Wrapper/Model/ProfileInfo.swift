@@ -13,7 +13,7 @@ public struct Notification {
         case enable = 3
         case disable = 4
     }
-    
+
     public let seqNumber: UInt64
     public let notificationAddress: String
     public let iccid: String
@@ -29,17 +29,7 @@ public struct ProfileInfo {
     public let isdpAid: String?
     public let state: LpacProfileState?
     public let profileClass: LpacProfileClass?
-    
-    init(iccid: String?, name: String?, provider: String?, nickname: String?, isdpAid: String?, state: LpacProfileState?, profileClass: LpacProfileClass?) {
-        self.iccid = iccid
-        self.name = name
-        self.provider = provider
-        self.nickname = nickname
-        self.isdpAid = isdpAid
-        self.state = state
-        self.profileClass = profileClass
-    }
-    
+
     func toJsonString() -> String {
         var dict = [String: Any]()
         if let iccid = iccid {

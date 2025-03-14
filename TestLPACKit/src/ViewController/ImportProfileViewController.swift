@@ -8,13 +8,11 @@
 import UIKit
 import AVFoundation
 
-
-protocol ImportProfileDelegate :AnyObject {
+protocol ImportProfileDelegate: AnyObject {
     func reloadProfile()
 }
 class ImportProfileViewController: UIViewController {
-   
-    
+
     // MARK: - Properties
 
     private var downloadState: LpacDownloadState?
@@ -22,39 +20,40 @@ class ImportProfileViewController: UIViewController {
         //        ActivationCode(code:"LPA:1$rsp.truphone.com$QR-G-5C-1LS-1W1Z9P7",status:false),
         ActivationCode(code: "LPA:1$rsp.truphone.com$QR-G-5C-KR-1PCDWP9", status: false)
         //        ActivationCode(code: "LPA:1$rsp.truphone.com$QRF-SPEEDTEST",status:false),
-        
+
         //        ActivationCode(code: "LPA:1$rsp.truphone.com$QRF-BETTERROAMING-PMRDGIR2EARDEIT5",status:false),
         //        ActivationCode(code: "LPA:1$rsp-eu.redteamobile.com$5901981126831169",status:false),
         //        ActivationCode(code: "LPA:1$smdpp.test.rsp.sysmocom.de$f54172bdf98a95d65cbeb88a38a1c11d800a85c3",status:false),
-        
+
         //        ActivationCode(code: "LPA:1$testsmdpplus.infineon.com$f54172bdf98a95d65cbeb88a38a1c11d800a85c3",status:false),
         //        ActivationCode(code: "LPA:1$testsmdpplus.infineon.com$c0bc70ba36929d43b467ff57570530e57ab8fcd8",status:false),
     ]
     private var captureSession: AVCaptureSession? = AVCaptureSession()
     private var previewLayer: AVCaptureVideoPreviewLayer!
-    private lazy var activityIndicator = { return UIActivityIndicatorView(style: .large) } ()
-    private lazy var downloadProgressLabel = { return UILabel() } ()
-    private lazy var downloadProgressView = { return UIProgressView(progressViewStyle: .bar) } ()
-    private lazy var smdpAddressTextField = { return UITextField() } ()
-    private lazy var activationCodeTextField = { return UITextField() } ()
-    private lazy var downloadButton = { return UIButton(type: .system) } ()
-    private lazy var cameraView = { return UIView() } ()
+    private lazy var activityIndicator = { return UIActivityIndicatorView(style: .large) }()
+    private lazy var downloadProgressLabel = { return UILabel() }()
+    private lazy var downloadProgressView = { return UIProgressView(progressViewStyle: .bar) }()
+    private lazy var smdpAddressTextField = { return UITextField() }()
+    private lazy var activationCodeTextField = { return UITextField() }()
+    private lazy var smdpAddressLabel = { return UILabel() }()
+    private lazy var activationCodeLabel = { return UILabel() }()
+    private lazy var downloadButton = { return UIButton(type: .system) }()
+    private lazy var cameraView = { return UIView() }()
     private lazy var inputStackView = {
-        let inputStackView = UIStackView(arrangedSubviews: [smdpAddressTextField,activationCodeTextField])
+        let inputStackView = UIStackView(arrangedSubviews: [smdpAddressLabel,smdpAddressTextField, activationCodeLabel,activationCodeTextField])
         inputStackView.axis = .vertical
-        inputStackView.spacing = 24
+        inputStackView.spacing = 10
         inputStackView.distribution = .equalSpacing
         return inputStackView
-    } ()
-    
+    }()
+
     // MARK: - Open properties
-    weak var delegate:ImportProfileDelegate?
-    
+    weak var delegate: ImportProfileDelegate?
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        
-        if (captureSession?.isRunning == true) {
+
+        if captureSession?.isRunning == true {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 self?.captureSession?.stopRunning()
             }
@@ -62,24 +61,24 @@ class ImportProfileViewController: UIViewController {
     }
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        if (captureSession?.isRunning == false) {
+        if captureSession?.isRunning == false {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 self?.captureSession?.startRunning()
             }
-        
+
         }
     }
-    
+
     override func viewDidLoad() {
         super.viewDidLoad()
         setUpCamera()
         setupUI()
         EuiccManager.shared.delegate = self
-        
+
     }
-    
+
     // MARK: - Setup
-    
+
     private func setupUI() {
         guard let captureSession else { return }
         previewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
@@ -89,49 +88,53 @@ class ImportProfileViewController: UIViewController {
             captureSession.startRunning()
         }
         view.addSubview(cameraView)
-        
+
         title = "eSIM Manager"
         view.backgroundColor = .systemBackground
-        
-        
-        
-        
-        
+
         // Configure activation code input
-        smdpAddressTextField.placeholder = "Enter SM-DP+ address"
+        smdpAddressLabel.text = "Enter SM-DP+ address"
+        smdpAddressLabel.font = UIFont.systemFont(ofSize: 14)
+        smdpAddressLabel.textColor = .black
         smdpAddressTextField.borderStyle = .roundedRect
         smdpAddressTextField.autocorrectionType = .no
         smdpAddressTextField.autocapitalizationType = .none
-        
-        activationCodeTextField.placeholder = "Enter activation code"
+        activationCodeLabel.text = "Enter activation code"
+        activationCodeLabel.font = UIFont.systemFont(ofSize: 14)
+        activationCodeLabel.textColor = .black
         activationCodeTextField.borderStyle = .roundedRect
         activationCodeTextField.autocorrectionType = .no
         activationCodeTextField.autocapitalizationType = .none
-        
+
         // Configure download button
         downloadButton.setTitle("Download Profile", for: .normal)
+        downloadButton.setTitleColor(.white, for: .normal)
         downloadButton.addTarget(self, action: #selector(downloadProfile), for: .touchUpInside)
         
+        downloadButton.layer.cornerRadius = 16
+        downloadButton.backgroundColor = .systemBlue
         // Configure download progress UI
+        downloadProgressView.layer.cornerRadius = 8
+        downloadProgressView.layer.masksToBounds = true
         downloadProgressLabel.textAlignment = .center
         downloadProgressLabel.font = UIFont.systemFont(ofSize: 14)
         downloadProgressLabel.isHidden = true
         downloadProgressView.progress = 0
         downloadProgressView.isHidden = true
-        
+
         // Configure activity indicator
         activityIndicator.hidesWhenStopped = true
-        
+
         // Add subviews
         view.addSubview(inputStackView)
         view.addSubview(downloadButton)
         view.addSubview(downloadProgressLabel)
         view.addSubview(downloadProgressView)
         view.addSubview(activityIndicator)
-        
+
         setupConstraints()
     }
-    
+
     private func setupConstraints() {
         cameraView.translatesAutoresizingMaskIntoConstraints = false
         inputStackView.translatesAutoresizingMaskIntoConstraints = false
@@ -139,36 +142,38 @@ class ImportProfileViewController: UIViewController {
         downloadProgressLabel.translatesAutoresizingMaskIntoConstraints = false
         downloadProgressView.translatesAutoresizingMaskIntoConstraints = false
         activityIndicator.translatesAutoresizingMaskIntoConstraints = false
-        
+
         NSLayoutConstraint.activate([
             // EID label at top
-            cameraView.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
-            cameraView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
-            cameraView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
-            cameraView.heightAnchor.constraint(equalTo: cameraView.widthAnchor,multiplier: 1),
-            
+            cameraView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 0),
+            cameraView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 0),
+            cameraView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 0),
+            cameraView.heightAnchor.constraint(equalTo: cameraView.widthAnchor, multiplier: 1),
+
             // Table view below EID label
-            
+
             // Input field below table view
-            inputStackView.topAnchor.constraint(greaterThanOrEqualTo: cameraView.bottomAnchor, constant: 16),
+            inputStackView.topAnchor.constraint(greaterThanOrEqualTo: cameraView.bottomAnchor, constant: 8),
             inputStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             inputStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            
+
             // Download button below input
-            downloadButton.topAnchor.constraint(equalTo: inputStackView.bottomAnchor, constant: 16),
-            downloadButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            
+            downloadButton.topAnchor.constraint(equalTo: inputStackView.bottomAnchor, constant: 8),
+            downloadButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            downloadButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            downloadButton.heightAnchor.constraint(equalToConstant: 40),
             // Progress label below button
-            downloadProgressLabel.topAnchor.constraint(equalTo: downloadButton.bottomAnchor, constant: 16),
+            downloadProgressLabel.topAnchor.constraint(equalTo: downloadButton.bottomAnchor, constant: 8),
             downloadProgressLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             downloadProgressLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            
+
             // Progress bar below label
+            downloadProgressView.heightAnchor.constraint(equalToConstant: 10),
             downloadProgressView.topAnchor.constraint(equalTo: downloadProgressLabel.bottomAnchor, constant: 8),
             downloadProgressView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             downloadProgressView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            downloadProgressView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
-            
+            downloadProgressView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: 0),
+
             // Activity indicator in center
             activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
@@ -178,11 +183,7 @@ class ImportProfileViewController: UIViewController {
             previewLayer.frame = cameraView.layer.bounds
         }
     }
-    
-   
-    
-    
-    
+
 }
 
 extension ImportProfileViewController: EuiccDelegate {
@@ -191,7 +192,7 @@ extension ImportProfileViewController: EuiccDelegate {
             self?.showAlert(title: "Error", message: decription)
         }
     }
-    
+
     func downloadCallbackHolder(_ state: LpacDownloadState) {
         DispatchQueue.main.async { [weak self] in
             self?.updateDownloadProgress(state: state)
@@ -208,15 +209,14 @@ extension ImportProfileViewController: EuiccDelegate {
                 self?.delegate?.reloadProfile()
             }
         }
-      
+
     }
 }
 // MARK: - Profile Manager
 extension ImportProfileViewController {
-    
+
     @objc private func downloadProfile() {
 
-        
         guard let SMDPAddress = smdpAddressTextField.text
             else {
             showAlert(title: "Error", message: "Please enter an SMDPAddress code")
@@ -234,7 +234,7 @@ extension ImportProfileViewController {
         downloadProgressLabel.isHidden = false
         downloadProgressView.isHidden = false
         updateDownloadProgress(state: .preparing)
-        
+
         // Start download
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
@@ -247,13 +247,13 @@ extension ImportProfileViewController {
             }
         }
     }
-    
+
     private func updateDownloadProgress(state: LpacDownloadState) {
         downloadState = state
-        
+
         let stateText: String
         var progress: Float = 0.0
-        
+
         switch state {
             case .preparing:
                 stateText = "Preparing download..."
@@ -274,46 +274,46 @@ extension ImportProfileViewController {
                 stateText = "Processing..."
                 progress = 0.5
         }
-        
+
         downloadProgressLabel.text = stateText
         UIView.animate(withDuration: 0.3) { [weak self] in
             self?.downloadProgressView.setProgress(progress, animated: true)
         }
     }
-    
+
 }
 // MARK: - Camera Handle
 extension ImportProfileViewController: AVCaptureMetadataOutputObjectsDelegate {
     private func setUpCamera() {
-        
+
         guard let videoCaptureDevice = AVCaptureDevice.default(for: .video), let captureSession else { return }
         let videoInput: AVCaptureDeviceInput
-        
+
         do {
             videoInput = try AVCaptureDeviceInput(device: videoCaptureDevice)
         } catch {
             return
         }
-        
+
         if captureSession.canAddInput(videoInput) {
             captureSession.addInput(videoInput)
         } else {
             failed()
             return
         }
-        
+
         let metadataOutput = AVCaptureMetadataOutput()
-        
+
         if captureSession.canAddOutput(metadataOutput) {
             captureSession.addOutput(metadataOutput)
-            
+
             metadataOutput.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
             metadataOutput.metadataObjectTypes = [.qr]
         } else {
             failed()
             return
         }
-        
+
     }
     func failed() {
         let ac = UIAlertController(title: "Scanning not supported", message: "Your device does not support scanning a code from an item. Please use a device with a camera.", preferredStyle: .alert)
@@ -321,10 +321,10 @@ extension ImportProfileViewController: AVCaptureMetadataOutputObjectsDelegate {
         present(ac, animated: true)
         captureSession = nil
     }
-    
+
     func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
         captureSession?.stopRunning()
-        
+
         if let metadataObject = metadataObjects.first {
             guard let readableObject = metadataObject as? AVMetadataMachineReadableCodeObject else { return }
             guard let stringValue = readableObject.stringValue else { return }
@@ -332,27 +332,27 @@ extension ImportProfileViewController: AVCaptureMetadataOutputObjectsDelegate {
             found(code: stringValue)
         }
     }
-    
+
     func found(code: String) {
         print(code)
-        
+
         // Parse activation code (format: LPA:1$smdp.example.com$matching-id)
         let components = code.replacingOccurrences(of: "LPA:", with: "").split(separator: "$")
         if components.count < 3 {
             showAlert(title: "Error", message: "Invalid activation code format")
             return
         }
-        
+
         let smdp = String(components[1])
         let matchingId = String(components[2])
         smdpAddressTextField.text = smdp
         activationCodeTextField.text = matchingId
     }
-    
+
     override var prefersStatusBarHidden: Bool {
         return false
     }
-    
+
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         return .portrait
     }

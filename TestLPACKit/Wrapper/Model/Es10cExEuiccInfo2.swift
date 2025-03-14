@@ -5,7 +5,6 @@
 //  Created by hoang.dinh on 3/5/25.
 //
 
-
 public struct Es10cExEuiccInfo2 {
     var profileVersion: String?
     var svn: String?

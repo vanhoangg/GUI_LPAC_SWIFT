@@ -5,14 +5,11 @@
 //  Created by hoang.dinh on 3/3/25.
 //
 
-
 import Foundation
 import CryptoTokenKit
 
-
-
 protocol EuiccDelegate: AnyObject {
-    func throwError(_ decription:String)
+    func throwError(_ decription: String)
     func downloadCallbackHolder(_ state: LpacDownloadState)
     func downloadFinish()
 
@@ -33,20 +30,19 @@ class EuiccManager {
     private let isdrAid = Data([0xA0, 0x00, 0x00, 0x05, 0x59, 0x10, 0x10, 0xFF, 0xFF, 0xFF, 0xFF, 0x89, 0x00, 0x00, 0x01, 0x00])
     var state: LpacDownloadState?
     var downloadResult: LpacError?
-    var complete:Bool = false
-    init(apduInterface: ApduInterface? = nil , httpInterface: HttpInterface? = nil)  {
+    init(apduInterface: ApduInterface? = nil, httpInterface: HttpInterface? = nil) {
         // Create LPAC manager
-     
+
         lpacManager = LpacManager(apduInterface: apduInterface ?? SmartCardApduInterface(), httpInterface: httpInterface ?? HttpInterfaceImpl())
         lpacManager.delegate = self
-        
+
     }
-    
+
     deinit {
         lpacManager.cleanup()
     }
     private func handleState(_ state: TKSmartCardSlot.State) {
-        
+
     }
     func retryConnect() async throws {
         do {
@@ -55,17 +51,17 @@ class EuiccManager {
             throw error
         }
     }
-    
+
     func createContext() async throws {
         // ISD-R AID for eUICC (example)
         // Initialize
         guard let smartCardName = TKSmartCardSlotManager.default?.slotNames.first else {
             throw SmartCardError.missingCard
         }
-        
+
         do {
-            let result = try await lpacManager.initialize(reader:smartCardName, isdrAid: isdrAid)
-            
+            let result = try await lpacManager.initialize(reader: smartCardName, isdrAid: isdrAid)
+
             if result != .success {
                 throw SmartCardError.initError("Failed to initialize LPAC library: \(result)")
             }
@@ -73,7 +69,7 @@ class EuiccManager {
             throw error
         }
     }
-    
+
     func getEID() throws -> String {
         do {
             return try lpacManager.getEID()
@@ -81,7 +77,7 @@ class EuiccManager {
             throw error
         }
     }
-    
+
     func getCardInfo() throws -> Es10cExEuiccInfo2 {
         do {
             return try lpacManager.getCardInfo()
@@ -89,12 +85,12 @@ class EuiccManager {
             throw error
         }
     }
-    
+
     func listProfiles() throws -> [ProfileInfo] {
         do { return try lpacManager.getProfilesInfo() } catch { throw error }
     }
-    
-    func changeStatusProfile(iccid: String, status:Bool) throws -> Bool {
+
+    func changeStatusProfile(iccid: String, status: Bool) throws -> Bool {
         do {
             let result = status ? try lpacManager.enableProfile(iccid: iccid) : try lpacManager.disableProfile(iccid: iccid)
             return result == .success
@@ -102,10 +98,9 @@ class EuiccManager {
             throw error
         }
     }
-    
-    
+
     func deleteProfile(iccid: String) async throws -> Bool {
-     
+
         // Notify changed for card reader
         do {
             let result = try lpacManager.deleteProfile(iccid: iccid)
@@ -116,16 +111,14 @@ class EuiccManager {
         } catch {
             throw error
         }
-   
-        
+
     }
-    
-    func handleNotification(seqNumber:UInt64, completion: ( ((Bool) -> Void))? = nil ) {
+
+    func handleNotification(seqNumber: UInt64, completion: ( ((Bool) -> Void))? = nil ) {
         let result = lpacManager.handleNotification(seqNumber: seqNumber)
         completion?(result)
     }
-    
-    
+
     func setNickname(iccid: String, nickname: String) throws -> Bool {
         // Notify changed for card reader
         do {
@@ -134,9 +127,9 @@ class EuiccManager {
         } catch {
             throw error
         }
-     
+
     }
-    
+
     func downloadProfile(
         activationCode: String
     ) throws {
@@ -145,12 +138,11 @@ class EuiccManager {
         guard components.count >= 3 else {
             throw(SmartCardError.initError("Invalid activation code format"))
         }
-        
+
         let smdp = String(components[1])
         let matchingId = String(components[2])
-        
+        downloadResult = nil
         // Download profile with progress updates
-        complete = false
         do {
             let result = try lpacManager.downloadProfile(
                 smdp: smdp,
@@ -164,8 +156,8 @@ class EuiccManager {
             throw error
         }
     }
-    
-    func beginTrackedOperation() async  {
+
+    func beginTrackedOperation() async {
         let latestSeq = self.listNotification.first?.seqNumber ?? 0
         print("Latest notification is \(latestSeq) before operation")
         print("Operation has requested notification handling")
@@ -174,7 +166,7 @@ class EuiccManager {
             self.handleNotification(seqNumber: notification.seqNumber)
         }
     }
-    
+
 }
 extension EuiccManager: LpacManagerDelegate {
     func downloadCallbackHolder(_ state: LpacDownloadState) {
@@ -184,9 +176,9 @@ extension EuiccManager: LpacManagerDelegate {
         } else {
             self.delegate?.downloadCallbackHolder(state)
         }
-        
+
     }
-    
+
     func throwError(_ description: String) {
         self.delegate?.throwError(description)
     }
@@ -197,11 +189,10 @@ class EuiccChannel {
     var notifications: [Notification]
     var slotId: String
     var channelID: Int
-    
+
     init(slotId: String, channelID: Int) {
         self.slotId = slotId
         self.channelID = channelID
         self.notifications = []
     }
 }
-

@@ -8,7 +8,6 @@
 import Foundation
 import CryptoTokenKit
 
-
 /// Swift interface for APDU operations
 
 public protocol ApduInterface: AnyObject {
@@ -16,27 +15,26 @@ public protocol ApduInterface: AnyObject {
     /// Connect to the card
     /// - Returns: True if successful
     func connect(completion: @escaping (Bool) -> Void)
-    
+
     /// Disconnect from the card
     func disconnect()
-    
+
     /// Open a logical channel with the given AID
     /// - Parameter aid: AID to select
     /// - Returns: Channel number or negative value on error
     func logicalChannelOpen(aid: Data, completion: ((Result<Int, Error>) -> Void)?)
-    
+
     /// Close a logical channel
     /// - Parameter channel: Channel to close
     func logicalChannelClose(channel: Int)
-    
+
     /// Transmit data to the card
     /// - Parameter data: Data to transmit
     /// - Returns: Response data
     func transmit(data: Data, completion: ((Result<Data, Error>) -> Void)?)
-    
-    func selectedDevice(reader:String) throws
-}
 
+    func selectedDevice(reader: String) throws
+}
 
 public struct UICCPort {
     var card: TKSmartCard?
@@ -50,29 +48,26 @@ public struct UICCPort {
 }
 class SmartCardApduInterface: ApduInterface {
     var port: UICCPort = UICCPort()
-    
+
     let initalCommand = "80AA00000AA9088100820101830107"
     let channelCommand = "0070000001"
 
-    
-    
-    func selectedDevice(reader:String) throws {
-        guard let slotManager = TKSmartCardSlotManager.default,let slot = slotManager.slotNamed( reader) else {
+    func selectedDevice(reader: String) throws {
+        guard let slotManager = TKSmartCardSlotManager.default, let slot = slotManager.slotNamed( reader) else {
             throw SmartCardError.invalidReader
         }
         guard let card = slot.makeSmartCard() else {
             throw SmartCardError.missingCard
         }
-        
+
         self.port.card = card
         self.port.slot = slot.name
     }
 
-
 }
 // MARK: - Private Func
 extension SmartCardApduInterface {
-    
+
     func sendAPDU(data: Data) async throws -> Data {
         print("Transmitting APDU: \(data.hexString)")
         guard let card = self.port.card else {
@@ -89,11 +84,11 @@ extension SmartCardApduInterface {
             throw error
         }
     }
-    
+
 }
 // MARK: - Interface
 extension SmartCardApduInterface {
-    
+
     func connect(completion: @escaping (Bool) -> Void) {
         guard let reader = self.port.slot else {
             print(SmartCardError.invalidReader.localizedDescription)
@@ -111,13 +106,13 @@ extension SmartCardApduInterface {
             }
         }
     }
-    
+
     func disconnect() {
         print("Disconnecting from smart card...")
         port.card?.endSession()
         port.card = nil
     }
-    
+
     func logicalChannelOpen(aid: Data, completion: ((Result<Int, Error>) -> Void)? = nil) {
         print("logicalChannelOpen: - Opening logical channel with AID: \(aid.hexString)")
         let request = manageChannelCmd(open: true, channel: 0)
@@ -129,8 +124,8 @@ extension SmartCardApduInterface {
                     completion?(.failure(error))
                     return
                 }
-                
-                let byte:UInt8 = response[response.startIndex]
+
+                let byte: UInt8 = response[response.startIndex]
                 self.port.channel.append(Int(byte))
                 let selectAid = selectByDfCmd(aid: [UInt8](aid), channel: byte)
                 let selectAidResponse = try await sendAPDU(data: selectAid)
@@ -180,12 +175,12 @@ extension SmartCardApduInterface {
         //
         //        })
     }
-    
+
     func logicalChannelClose(channel: Int) {
         print("Closing logical channel: \(channel)")
         // Implementation would depend on the specific smart card protocol
     }
-    
+
     func transmit(data: Data, completion: ((Result<Data, Error>) -> Void)? = nil) {
         print("Transmitting APDU: \(data.hexString)")
         Task {
@@ -198,13 +193,13 @@ extension SmartCardApduInterface {
             }
         }
     }
-    
+
 }
 // MARK: - Helper
 extension SmartCardApduInterface {
-    private func convertResponseStatus(data:Data) -> Data{
-        let sw1:UInt8 = data[data.count - 2]
-        let sw2:UInt8 = data[data.count - 1]
+    private func convertResponseStatus(data: Data) -> Data {
+        let sw1: UInt8 = data[data.count - 2]
+        let sw2: UInt8 = data[data.count - 1]
         var response = data.dropLast(2)
         response.append(sw1)
         response.append(sw2)
@@ -213,7 +208,7 @@ extension SmartCardApduInterface {
         print("sw2: \(sw2)")
         return response
     }
-    private func buildSelectCommand(channel:Data,aid: Data) -> Data {
+    private func buildSelectCommand(channel: Data, aid: Data) -> Data {
         var command = Data()
         command.append(channel) // CLA
         command.append(0xA4) // INS (SELECT)
@@ -221,7 +216,7 @@ extension SmartCardApduInterface {
         command.append(0x00) // P2 (First or only occurrence)
         command.append(UInt8(aid.count)) // Lc (Length of AID)
         command.append(aid) // AID data
-        
+
         return command
     }
     private func buildCmd(cla: UInt8, ins: UInt8, p1: UInt8, p2: UInt8, data: [UInt8]?, le: UInt8?) -> Data {
@@ -235,7 +230,7 @@ extension SmartCardApduInterface {
         }
         return Data(cmd)
     }
-    
+
     private func manageChannelCmd(open: Bool, channel: UInt8) -> Data {
         if open {
             return buildCmd(cla: 0x00, ins: 0x70, p1: 0x00, p2: 0x00, data: nil, le: 0x01)
@@ -243,9 +238,8 @@ extension SmartCardApduInterface {
             return buildCmd(cla: channel, ins: 0x70, p1: 0x80, p2: channel, data: nil, le: nil)
         }
     }
-    
+
     private func selectByDfCmd(aid: [UInt8], channel: UInt8) -> Data {
         return buildCmd(cla: channel, ins: 0xA4, p1: 0x04, p2: 0x00, data: aid, le: nil)
     }
 }
-
